@@ -44,7 +44,7 @@ public static class CsvClassGenerator
         for (int i = 0; i < headers.Length; i++)
             fieldTypes[i] = InferType(values[i], headers[i]);
 
-        sb.AppendLine("namespace GeneratedTables");
+        sb.AppendLine("namespace Skddkkkk.Data");
         sb.AppendLine("{");
 
         foreach (var enumInfo in enumMap.Values)
@@ -58,10 +58,10 @@ public static class CsvClassGenerator
         }
 
         sb.AppendLine("    [System.Serializable]");
-        sb.AppendLine($"    public class {className}");
+        sb.AppendLine($"    public class {className} : IDataRecord");
         sb.AppendLine("    {");
         for (int i = 0; i < headers.Length; i++)
-            sb.AppendLine($"        public {fieldTypes[i]} {SanitizeIdentifier(headers[i])};");
+            sb.AppendLine($"        public {fieldTypes[i]} {SanitizeIdentifier(headers[i])} {{ get; set; }}");
         sb.AppendLine("    }");
 
         sb.AppendLine("}");

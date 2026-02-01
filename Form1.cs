@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Windows.Forms;
+using Microsoft.WindowsAPICodePack.Dialogs;
 
 namespace CSVParserTool
 {
@@ -16,9 +17,9 @@ namespace CSVParserTool
     }
     public partial class Form1 : Form
     {
-        private string generatedDir => Path.Combine(outputFolderPath, "Generated");
         private string dllPath => Path.Combine(outputFolderPath, "DataTables.dll");
         private string generatedCsvDir => Path.Combine(outputFolderPath, "GeneratedCsv");
+        private string generatedBytesDir => Path.Combine(outputFolderPath, "GeneratedBytes");
 
         private const int MAX_LOG_LINES = 300;
         private const int MAX_RECENT_CSV = 5;
@@ -194,25 +195,30 @@ namespace CSVParserTool
             try
             {
                 string csvName = Path.GetFileName(currentSelectedCsvPath);
-
                 AddLog($"CSV 처리 시작: {csvName}", LogLevel.Info);
 
-                CsvClassGenerator.GenerateAndSave(
+                DllBuilder.BuildFromCsv(
                     currentSelectedCsvPath,
-                    generatedDir
-                );
-
-                AddLog("클래스 파일 생성 완료", LogLevel.Info);
-
-                DllBuilder.Build(
-                    generatedDir,
                     dllPath
                 );
-
                 AddLog($"DLL 빌드 완료: {dllPath}", LogLevel.Info);
 
+                Directory.CreateDirectory(generatedBytesDir);
+
+                string bytesPath = Path.Combine(
+                    generatedBytesDir,
+                    Path.GetFileNameWithoutExtension(csvName) + ".bytes"
+                );
+
+                CsvEncryptor.EncryptCsvToFile(
+                    currentSelectedCsvPath,
+                    bytesPath
+                );
+
+                AddLog($"CSV 암호화 완료: {bytesPath}", LogLevel.Info);
+
                 MessageBox.Show(
-                    "클래스 생성 및 DLL 빌드 완료!",
+                    "DLL 빌드 및 CSV 암호화 완료!",
                     "완료",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information
@@ -250,13 +256,13 @@ namespace CSVParserTool
 
         private void Btn_SelectOutputFolder_Click(object sender, EventArgs e)
         {
-            using (FolderBrowserDialog fbd = new FolderBrowserDialog())
+            using (CommonOpenFileDialog cfd = new CommonOpenFileDialog())
             {
-                fbd.Description = "C# 클래스 출력 폴더를 선택하세요";
-
-                if (fbd.ShowDialog() == DialogResult.OK)
+                cfd.Title = "C# 클래스 출력 폴더를 선택하세요";
+                cfd.IsFolderPicker = true;
+                if (cfd.ShowDialog() == CommonFileDialogResult.Ok)
                 {
-                    outputFolderPath = fbd.SelectedPath;
+                    outputFolderPath = cfd.FileName;
                     Label_OutputPath.Text = outputFolderPath;
 
                     Properties.Settings.Default.OutputFolderPath = outputFolderPath;

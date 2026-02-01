@@ -7,19 +7,31 @@ using System.Linq;
 
 public static class DllBuilder
 {
-    public static void Build(string sourceDir, string outputDllPath)
-    {
-        var csFiles = Directory.GetFiles(sourceDir, "*.cs");
 
-        var syntaxTrees = csFiles
-            .Select(f => CSharpSyntaxTree.ParseText(File.ReadAllText(f)))
-            .ToList();
+    public static void BuildFromCsv(
+        string csvPath,
+        string outputDllPath
+    )
+    {
+        string classSource = CsvClassGenerator.GenerateClass(csvPath);
+
+
+        var baseDir = AppContext.BaseDirectory;
+
+
+        string dataRecordSource = File.ReadAllText("IDataRecord.cs");
+        string cryptoUtilSource = File.ReadAllText("CryptoUtil.cs");
+        var syntaxTrees = new[]
+        {
+            CSharpSyntaxTree.ParseText(dataRecordSource),
+            CSharpSyntaxTree.ParseText(classSource),
+            CSharpSyntaxTree.ParseText(cryptoUtilSource),
+        };
+
         var references = new List<MetadataReference>
         {
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(List<>).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(SerializableAttribute).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(System.Runtime.AssemblyTargetedPatchBandAttribute).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Enumerable).Assembly.Location),
         };
 
         var compilation = CSharpCompilation.Create(
@@ -34,7 +46,10 @@ public static class DllBuilder
 
         if (!result.Success)
         {
-            var errors = string.Join("\n", result.Diagnostics);
+            var errors = string.Join(
+                "\n",
+                result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)
+            );
             throw new Exception(errors);
         }
     }
