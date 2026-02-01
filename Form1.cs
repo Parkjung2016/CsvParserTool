@@ -18,8 +18,8 @@ namespace CSVParserTool
     public partial class Form1 : Form
     {
         private string dllPath => Path.Combine(outputFolderPath, "DataTables.dll");
-        private string generatedCsvDir => Path.Combine(outputFolderPath, "GeneratedCsv");
-        private string generatedBytesDir => Path.Combine(outputFolderPath, "GeneratedBytes");
+        private string csvDir => Path.Combine(outputFolderPath, "Csv");
+        private string bytesDir => Path.Combine(outputFolderPath, "Bytes");
 
         private const int MAX_LOG_LINES = 300;
         private const int MAX_RECENT_CSV = 5;
@@ -76,12 +76,12 @@ namespace CSVParserTool
                 csvDirWatcher = null;
             }
 
-            if (string.IsNullOrEmpty(generatedCsvDir) || !Directory.Exists(generatedCsvDir))
+            if (string.IsNullOrEmpty(csvDir) || !Directory.Exists(csvDir))
                 return;
 
             csvDirWatcher = new FileSystemWatcher
             {
-                Path = generatedCsvDir,
+                Path = csvDir,
                 Filter = "*.csv",
                 NotifyFilter =
                     NotifyFilters.FileName |
@@ -131,7 +131,7 @@ namespace CSVParserTool
             {
                 ListBox_CsvFiles.SelectedItem = prevSelected;
 
-                string csvPath = Path.Combine(generatedCsvDir, prevSelected + ".csv");
+                string csvPath = Path.Combine(csvDir, prevSelected + ".csv");
                 currentSelectedCsvPath = csvPath;
 
                 RefreshPreview(csvPath);
@@ -203,10 +203,10 @@ namespace CSVParserTool
                 );
                 AddLog($"DLL 빌드 완료: {dllPath}", LogLevel.Info);
 
-                Directory.CreateDirectory(generatedBytesDir);
+                Directory.CreateDirectory(bytesDir);
 
                 string bytesPath = Path.Combine(
-                    generatedBytesDir,
+                    bytesDir,
                     Path.GetFileNameWithoutExtension(csvName) + ".bytes"
                 );
 
@@ -235,13 +235,13 @@ namespace CSVParserTool
         {
             ListBox_CsvFiles.Items.Clear();
 
-            if (string.IsNullOrEmpty(generatedCsvDir) || !Directory.Exists(generatedCsvDir))
+            if (string.IsNullOrEmpty(csvDir) || !Directory.Exists(csvDir))
             {
                 AddLog("CSV 폴더가 유효하지 않아 리스트를 로드하지 않음", LogLevel.Warning);
                 return;
             }
 
-            allCsvFiles = Directory.GetFiles(generatedCsvDir, "*.csv");
+            allCsvFiles = Directory.GetFiles(csvDir, "*.csv");
 
             foreach (var file in allCsvFiles)
             {
@@ -286,7 +286,7 @@ namespace CSVParserTool
             string fileName = ListBox_CsvFiles.SelectedItem.ToString();
             TextBox_SelectedCsv.Text = $"설정할 CSV : {fileName}";
 
-            string csvPath = Path.Combine(generatedCsvDir, ListBox_CsvFiles.SelectedItem.ToString() + ".csv");
+            string csvPath = Path.Combine(csvDir, ListBox_CsvFiles.SelectedItem.ToString() + ".csv");
             if (currentSelectedCsvPath != csvPath)
             {
                 RefreshPreview(csvPath);
@@ -378,7 +378,7 @@ namespace CSVParserTool
         {
             var sb = new StringBuilder();
 
-            if (string.IsNullOrEmpty(generatedCsvDir) || !Directory.Exists(generatedCsvDir))
+            if (string.IsNullOrEmpty(csvDir) || !Directory.Exists(csvDir))
                 sb.AppendLine("- CSV 폴더 경로가 설정되지 않았거나 존재하지 않습니다.");
 
             if (string.IsNullOrEmpty(outputFolderPath) || !Directory.Exists(outputFolderPath))
@@ -558,7 +558,7 @@ namespace CSVParserTool
                 }
 
                 string newCsvPath = CsvCreator.CreateNew(
-                    generatedCsvDir,
+                    csvDir,
                     inputName
                 );
 
@@ -578,7 +578,7 @@ namespace CSVParserTool
 
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = generatedCsvDir,
+                    FileName = csvDir,
                     UseShellExecute = true
                 });
             }
