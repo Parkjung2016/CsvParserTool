@@ -44,6 +44,12 @@ namespace CSVParserTool
             File.WriteAllText(loaderPath, BuildDataSheetLoader(), new UTF8Encoding(false));
             log?.Invoke($"Generated: {loaderPath}");
 
+            string editorDir = Path.Combine(scriptsDir, "Editor");
+            Directory.CreateDirectory(editorDir);
+            string loaderEditorPath = Path.Combine(editorDir, "DataSheetLoaderEditor.ToolGenerated.cs");
+            File.WriteAllText(loaderEditorPath, BuildDataSheetLoaderEditor(), new UTF8Encoding(false));
+            log?.Invoke($"Generated: {loaderEditorPath}");
+
             string oldManagerPath = Path.Combine(scriptsDir, "DataManager.ToolGenerated.g.cs");
             if (File.Exists(oldManagerPath))
             {
@@ -58,13 +64,14 @@ namespace CSVParserTool
             foreach (var name in unique)
             {
                 string containerPath = Path.Combine(scriptsDir, $"{name}Container.cs");
-
                 if (File.Exists(containerPath))
                     continue;
 
-                File.WriteAllText(containerPath, BuildContainer(name), new UTF8Encoding(false));
+                File.WriteAllText(containerPath, BuildContainerStub(name), new UTF8Encoding(false));
                 log?.Invoke($"Generated: {containerPath}");
             }
+
+            MpcCodeGenerator.Generate(scriptsDir, log);
         }
 
         // =========================
@@ -177,19 +184,35 @@ namespace CSVParserTool
             sb.AppendLine("        where T : class");
             sb.AppendLine("    {");
             sb.AppendLine("        private readonly Dictionary<int, T> byId = new Dictionary<int, T>();");
+            sb.AppendLine("        private readonly List<T> all = new List<T>();");
             sb.AppendLine();
             sb.AppendLine("        public T Get(int id)");
             sb.AppendLine("        {");
             sb.AppendLine("            return byId.TryGetValue(id, out var row) ? row : null;");
             sb.AppendLine("        }");
             sb.AppendLine();
+            sb.AppendLine("        /// <summary>로드된 모든 행(시트 순서).</summary>");
+            sb.AppendLine("        public IReadOnlyList<T> GetAll() => all;");
+            sb.AppendLine();
+            sb.AppendLine("        /// <summary>로드·인덱싱 직후. <c>*Container</c> partial에서 override.</summary>");
+            sb.AppendLine("        protected virtual void OnLoaded() { }");
+            sb.AppendLine();
             sb.AppendLine("        internal void ReplaceFromLoader(IEnumerable<T> rows)");
             sb.AppendLine("        {");
             sb.AppendLine("            byId.Clear();");
-            sb.AppendLine("            if (rows == null)");
-            sb.AppendLine("                return;");
-            sb.AppendLine("            foreach (T r in rows)");
-            sb.AppendLine("                byId[DataRowId<T>.Of(r)] = r;");
+            sb.AppendLine("            all.Clear();");
+            sb.AppendLine("            if (rows != null)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                foreach (T r in rows)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    if (r == null)");
+            sb.AppendLine("                        continue;");
+            sb.AppendLine("                    byId[DataRowId<T>.Of(r)] = r;");
+            sb.AppendLine("                    all.Add(r);");
+            sb.AppendLine("                }");
+            sb.AppendLine("            }");
+            sb.AppendLine();
+            sb.AppendLine("            OnLoaded();");
             sb.AppendLine("        }");
             sb.AppendLine("    }");
             sb.AppendLine("}");
@@ -218,17 +241,52 @@ namespace CSVParserTool
             sb.AppendLine("    /// <summary>시트 로드는 <b>Addressables</b>만 사용. <see cref=\"AddressableBytesKeyPrefix\"/> / <see cref=\"AddressableCsvKeyPrefix\"/>에 맞춰 등록하세요.</summary>");
             sb.AppendLine("    public static class DataSheetLoader");
             sb.AppendLine("    {");
-            sb.AppendLine("        /// <summary>true면 <c>.bytes</c>만, false면 <c>DT_*.csv</c> TextAsset 우선(실패 시 <c>.bytes</c>).</summary>");
-            sb.AppendLine("        public static bool UseBytesFile { get; set; } = !Application.isEditor;");
+            sb.AppendLine("        private const string UseBytesPrefsKey = \"PJDev.Data.UseBytesFile\";");
             sb.AppendLine();
-            sb.AppendLine("        /// <summary>Addressables 주소 접두사. 기본: <c>\"Datas/Bytes/\"</c> + <c>DT_Test.bytes</c>.</summary>");
-            sb.AppendLine("        public static string AddressableBytesKeyPrefix { get; set; } = \"Datas/Bytes/\";");
+            sb.AppendLine("        /// <summary>");
+            sb.AppendLine("        /// 에디터: <c>EditorPrefs</c>로 CSV/Bytes 전환(메뉴 PJDev/Data). 빌드: 항상 <c>.bytes</c>.");
+            sb.AppendLine("        /// false면 CSV만 로드(없으면 예외, bytes 폴백 없음).");
+            sb.AppendLine("        /// </summary>");
+            sb.AppendLine("        public static bool UseBytesFile");
+            sb.AppendLine("        {");
+            sb.AppendLine("            get => ReadUseBytesFile();");
+            sb.AppendLine("            set => WriteUseBytesFile(value);");
+            sb.AppendLine("        }");
             sb.AppendLine();
-            sb.AppendLine("        /// <summary>Addressables 주소 접두사. 기본: <c>\"Datas/CSV/\"</c> + <c>DT_Test.csv</c>.</summary>");
-            sb.AppendLine("        public static string AddressableCsvKeyPrefix { get; set; } = \"Datas/CSV/\";");
+            sb.AppendLine("        private static bool ReadUseBytesFile()");
+            sb.AppendLine("        {");
+            sb.AppendLine("#if UNITY_EDITOR");
+            sb.AppendLine("            return UnityEditor.EditorPrefs.GetBool(UseBytesPrefsKey, false);");
+            sb.AppendLine("#else");
+            sb.AppendLine("            return true;");
+            sb.AppendLine("#endif");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        private static void WriteUseBytesFile(bool value)");
+            sb.AppendLine("        {");
+            sb.AppendLine("#if UNITY_EDITOR");
+            sb.AppendLine("            UnityEditor.EditorPrefs.SetBool(UseBytesPrefsKey, value);");
+            sb.AppendLine("#endif");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        private static bool IsUseBytesFile()");
+            sb.AppendLine("        {");
+            sb.AppendLine("#if UNITY_EDITOR");
+            sb.AppendLine("            return ReadUseBytesFile();");
+            sb.AppendLine("#else");
+            sb.AppendLine("            return true;");
+            sb.AppendLine("#endif");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        /// <summary>Addressables 주소 접두사. 기본: <c>\"Content/Bytes/\"</c> + <c>DT_Test.bytes</c>.</summary>");
+            sb.AppendLine("        public static string AddressableBytesKeyPrefix { get; set; } = \"Content/Bytes/\";");
+            sb.AppendLine();
+            sb.AppendLine("        /// <summary>Addressables 주소 접두사. 기본: <c>\"Content/CSV/\"</c> + <c>DT_Test.csv</c>.</summary>");
+            sb.AppendLine("        public static string AddressableCsvKeyPrefix { get; set; } = \"Content/CSV/\";");
             sb.AppendLine();
             sb.AppendLine("        private static readonly MessagePackSerializerOptions SheetOptions =");
-            sb.AppendLine("            MessagePackSerializerOptions.Standard;");
+            sb.AppendLine("            MessagePackSerializerOptions.Standard");
+            sb.AppendLine("                .WithResolver(Resolvers.PJDevDataGeneratedResolver.Instance);");
             sb.AppendLine();
             sb.AppendLine("        private static string DataFileStem(string className)");
             sb.AppendLine("        {");
@@ -320,23 +378,19 @@ namespace CSVParserTool
             sb.AppendLine("            where T : class");
             sb.AppendLine("        {");
             sb.AppendLine("            string name = typeof(T).Name;");
-            sb.AppendLine("            if (!UseBytesFile)");
+            sb.AppendLine("            if (!IsUseBytesFile())");
             sb.AppendLine("            {");
             sb.AppendLine("                string csvKey = CsvAddressKey(name);");
             sb.AppendLine("                AsyncOperationHandle<TextAsset> csvHandle = Addressables.LoadAssetAsync<TextAsset>(csvKey);");
             sb.AppendLine("                try");
             sb.AppendLine("                {");
             sb.AppendLine("                    TextAsset csvTa = await AwaitHandle(csvHandle);");
-            sb.AppendLine("                    if (csvTa != null && !string.IsNullOrEmpty(csvTa.text))");
-            sb.AppendLine("                    {");
-            sb.AppendLine("                        List<T> csvList = await ParseCsvTextAsync<T>(csvTa.text);");
-            sb.AppendLine("                        container.ReplaceFromLoader(csvList);");
-            sb.AppendLine("                        return;");
-            sb.AppendLine("                    }");
-            sb.AppendLine("                }");
-            sb.AppendLine("                catch");
-            sb.AppendLine("                {");
-            sb.AppendLine("                    /* CSV가 없거나 파싱 실패면 bytes로 폴백 */");
+            sb.AppendLine("                    if (csvTa == null || string.IsNullOrEmpty(csvTa.text))");
+            sb.AppendLine("                        throw new InvalidOperationException($\"CSV not found or empty: {csvKey} ({name})\");");
+            sb.AppendLine();
+            sb.AppendLine("                    List<T> csvList = await ParseCsvTextAsync<T>(csvTa.text);");
+            sb.AppendLine("                    container.ReplaceFromLoader(csvList);");
+            sb.AppendLine("                    return;");
             sb.AppendLine("                }");
             sb.AppendLine("                finally");
             sb.AppendLine("                {");
@@ -380,16 +434,56 @@ namespace CSVParserTool
             return sb.ToString();
         }
 
-        private static string BuildContainer(string name)
+        private static string BuildDataSheetLoaderEditor()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("// <auto-generated>");
+            sb.AppendLine("#if UNITY_EDITOR");
+            sb.AppendLine("using UnityEditor;");
+            sb.AppendLine("using UnityEngine;");
+            sb.AppendLine();
+            sb.AppendLine("namespace PJDev.Data.Editor");
+            sb.AppendLine("{");
+            sb.AppendLine("    public static class DataSheetLoaderEditorMenu");
+            sb.AppendLine("    {");
+            sb.AppendLine("        private const string MenuRoot = \"PJDev/Data/\";");
+            sb.AppendLine();
+            sb.AppendLine("        [MenuItem(MenuRoot + \"Load: CSV (TextAsset)\", false, 100)]");
+            sb.AppendLine("        private static void SetLoadCsv()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            DataSheetLoader.UseBytesFile = false;");
+            sb.AppendLine("            Debug.Log(\"[PJDev.Data] Load mode: CSV only (no bytes fallback).\");");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        [MenuItem(MenuRoot + \"Load: CSV (TextAsset)\", true)]");
+            sb.AppendLine("        private static bool SetLoadCsvValidate() => DataSheetLoader.UseBytesFile;");
+            sb.AppendLine();
+            sb.AppendLine("        [MenuItem(MenuRoot + \"Load: Bytes (MessagePack)\", false, 101)]");
+            sb.AppendLine("        private static void SetLoadBytes()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            DataSheetLoader.UseBytesFile = true;");
+            sb.AppendLine("            Debug.Log(\"[PJDev.Data] Load mode: Bytes only.\");");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        [MenuItem(MenuRoot + \"Load: Bytes (MessagePack)\", true)]");
+            sb.AppendLine("        private static bool SetLoadBytesValidate() => !DataSheetLoader.UseBytesFile;");
+            sb.AppendLine("    }");
+            sb.AppendLine("}");
+            sb.AppendLine("#endif");
+            return sb.ToString();
+        }
+
+        private static string BuildContainerStub(string name)
         {
             var sb = new StringBuilder();
 
             sb.AppendLine("// <auto-generated placeholder — export overwrites with full *Container.cs from CSV.>");
+            sb.AppendLine("// 가공 로직은 PlayerDataContainer.cs 등 별도 partial 파일에 작성하세요.");
             sb.AppendLine("using Cysharp.Threading.Tasks;");
             sb.AppendLine();
             sb.AppendLine("namespace PJDev.Data");
             sb.AppendLine("{");
-            sb.AppendLine($"    public sealed class {name}Container : DataContainerBase<{name}>");
+            sb.AppendLine($"    public partial class {name}Container : DataContainerBase<{name}>");
             sb.AppendLine("    {");
             sb.AppendLine("        public UniTask LoadAsync() => DataSheetLoader.LoadAsync(this);");
             sb.AppendLine("    }");

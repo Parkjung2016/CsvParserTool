@@ -46,7 +46,7 @@ namespace DataTool.Cli
             Console.WriteLine("  --project      Unity project root (do NOT select the Assets folder).");
             Console.WriteLine("  --excel        XLSX source folder (optional; used with --refresh-xlsx).");
             Console.WriteLine("  --refresh-xlsx Run Excel→CSV for all .xlsx in --excel before export.");
-            Console.WriteLine("  Exports every DT_*.csv in Assets\\_Game\\04Datas\\CSV (*Container.cs + deploy CSV + MessagePack .bytes).");
+            Console.WriteLine("  Exports DT_* → DataTables\\Content\\CSV|Bytes, DataTables\\Scripts.");
             Console.WriteLine();
             Console.WriteLine("Examples:");
             Console.WriteLine("  DataTool export --project C:\\Game --excel C:\\tables --refresh-xlsx");

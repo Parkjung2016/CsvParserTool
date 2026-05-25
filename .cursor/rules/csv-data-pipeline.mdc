@@ -12,7 +12,7 @@ alwaysApply: false
 ## `CsvClassGenerator`
 
 - Requires **header row + at least one data row**; infers types from the **first data row** (and header names for enum-style columns).
-- Generated output uses namespace **`PJDev.Data`**, `using MessagePack;`, **`[MessagePackObject]`** + **`[Key(n)]`** on properties, **`[Serializable]`**, plain **`public class`** (must include **`public int Id`** for loaders), property names from sanitized headers.
+- Generated output uses namespace **`PJDev.Data`**, **`[MessagePackObject(true)]`** (array layout, `.bytes`와 일치) + **`[Key(n)]`**, **`[Serializable]`**, **`public int Id`**. Export 끝에 **mpc** → `DataTables/Scripts/MessagePackGenerated.cs`; Unity 로드는 **`PJDevDataGeneratedResolver`** (`DataSheetLoader`).
 - Prefer **`ReadAllLinesSafe`** / **`FileShare.ReadWrite`** when reading CSVs the user may have open elsewhere (match existing file access).
 - Public helpers: `GenerateClass`, `ValidateCsv`, `GenerateAndSave` — keep behavior aligned if one is changed.
 
@@ -24,6 +24,7 @@ alwaysApply: false
 
 - **AES-CBC PKCS7** with embedded key/IV — treat as **game/tool coupling**, not general-purpose secrecy; document any algorithm or key changes for downstream projects.
 - Table rows use **`public int Id`**; `DataContainerBase` resolves it via reflection (`DataRowId<T>`).
+- **`DataContainerBase<T>`** (ToolGenerated): **`Get(int)`**, **`GetAll()`**, **`OnLoaded()`**. **`*Container`** is **`partial`** (export는 record + `LoadAsync`만 덮어씀); 가공은 Unity에서 `*Container`의 **별도 partial .cs**에 작성.
 
 ## `DllBuilder`
 

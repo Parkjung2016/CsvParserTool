@@ -140,10 +140,10 @@ namespace CSVParserTool
                     Ok = true,
                     SummaryLines =
                         $"Done. ({ok} table(s)" + (failed > 0 ? $", {failed} skipped" : "") + ")\r\n" +
-                        "· Class: Assets\\_Game\\03Scripts\\04Datas\r\n" +
-                        "· CSV: Assets\\_Game\\04Datas\\CSV\r\n" +
-                        "· Bytes: Assets\\_Game\\04Datas\\Bytes (DT_*.bytes, MessagePack)\r\n" +
-                        "· Unity: GlobalDataContainer + DataSheetLoader + DataContainerBase *.ToolGenerated.g.cs; *Container.cs (record + Container)"
+                        "· Scripts: Assets\\_Game\\DataTables\\Scripts\r\n" +
+                        "· Content: Assets\\_Game\\DataTables\\Content\\CSV · Bytes (DT_*)\r\n" +
+                        "· Unity: ToolGenerated.g.cs + *Container.cs + MessagePackGenerated.cs (mpc)\r\n" +
+                        "  (mpc 실패 시 fallback — 솔루션 루트에서 dotnet tool restore)"
                 };
             }
             catch (Exception ex)

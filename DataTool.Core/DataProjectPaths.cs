@@ -2,27 +2,40 @@ using System.IO;
 
 namespace CSVParserTool
 {
-    /// <summary>Project root = Unity repo root (do not include <c>Assets</c>). All outputs under <c>Assets\_Game\…</c>.</summary>
+    /// <summary>Project root = Unity repo root (do not include <c>Assets</c>). 출력: <c>DataTables/Scripts</c>, <c>DataTables/Content/…</c>.</summary>
     public static class DataProjectPaths
     {
+        public const string DataTablesFolderName = "DataTables";
+
+        /// <summary>CSV·Bytes 등 런타임 에셋 묶음 폴더명 (<c>DataTables/Datas</c> 대신).</summary>
+        public const string DataTablesContentFolderName = "Content";
+
         public static string UnityAssetsDir(string projectRoot) =>
             Path.Combine(projectRoot, "Assets");
 
-        /// <summary>게임 데이터 출력 루트: <c>Assets\_Game\04Datas</c> (CSV·NDB 상위).</summary>
+        /// <summary>데이터 테이블 루트: <c>Assets\_Game\DataTables</c>.</summary>
         public static string GameDatasDir(string projectRoot) =>
-            Path.Combine(UnityAssetsDir(projectRoot), "_Game", "04Datas");
+            Path.Combine(UnityAssetsDir(projectRoot), "_Game", DataTablesFolderName);
+
+        /// <summary><c>DataTables\Content</c> — CSV·Bytes·NDB.</summary>
+        public static string DataTablesContentDir(string projectRoot) =>
+            Path.Combine(GameDatasDir(projectRoot), DataTablesContentFolderName);
 
         public static string DataCsvDir(string projectRoot) =>
-            Path.Combine(GameDatasDir(projectRoot), "CSV");
+            Path.Combine(DataTablesContentDir(projectRoot), "CSV");
 
         public static string DataNdbDir(string projectRoot) =>
-            Path.Combine(GameDatasDir(projectRoot), "NDB");
+            Path.Combine(DataTablesContentDir(projectRoot), "NDB");
 
-        /// <summary>MessagePack 테이블 바이너리: <c>Assets\_Game\04Datas\Bytes</c> (<c>DT_Test.bytes</c>, CSV stem과 동일).</summary>
         public static string DataBytesDir(string projectRoot) =>
-            Path.Combine(GameDatasDir(projectRoot), "Bytes");
+            Path.Combine(DataTablesContentDir(projectRoot), "Bytes");
 
+        /// <summary>생성 C# (Container·ToolGenerated): <c>DataTables\Scripts</c>.</summary>
         public static string ScriptsDataDir(string projectRoot) =>
-            Path.Combine(UnityAssetsDir(projectRoot), "_Game", "03Scripts", "04Datas");
+            Path.Combine(GameDatasDir(projectRoot), "Scripts");
+
+        /// <summary>Unity Editor 전용: <c>DataTables\Scripts\Editor</c>.</summary>
+        public static string ScriptsEditorDir(string projectRoot) =>
+            Path.Combine(ScriptsDataDir(projectRoot), "Editor");
     }
 }

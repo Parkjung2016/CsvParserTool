@@ -439,7 +439,7 @@ namespace CSVParserTool
 
                     AddLog(
                         $"프로젝트 루트: {projectRootPath}\n" +
-                        "→ 출력은 Assets\\ 아래: CSV DT_*.csv · Bytes DT_*.bytes · 스크립트 Assets\\_Game\\03Scripts\\04Datas",
+                        "→ 출력: DataTables\\Content\\CSV·Bytes, DataTables\\Scripts",
                         LogLevel.Info);
                     ReloadDataFileList();
                     InitDirectoryWatchers();
@@ -590,7 +590,7 @@ namespace CSVParserTool
                 return;
             }
 
-            TryOpenFolderInExplorer(gameDatasDir, "Assets\\_Game\\04Datas", (m, l) => AddLog(m, l));
+            TryOpenFolderInExplorer(gameDatasDir, "Assets\\_Game\\DataTables", (m, l) => AddLog(m, l));
         }
 
         private void Btn_OpenXlsxFolder_Click(object sender, EventArgs e)
@@ -632,9 +632,10 @@ namespace CSVParserTool
                 using (var wb = new ClosedXML.Excel.XLWorkbook())
                 {
                     var ws = wb.AddWorksheet("Sheet1");
-                    ws.Cell(2, 1).Value = "#설명";
-                    ws.Cell(2, 2).Value = "Id";
-                    ws.Cell(3, 2).Value = 0;
+                    ws.Cell(1, 1).Value = "#설명";
+                    ws.Cell(1, 2).Value = "Id";
+                    ws.Cell(2, 1).Value = "플레이어";
+                    ws.Cell(2, 2).Value = 0;
                     wb.SaveAs(newPath);
                 }
 

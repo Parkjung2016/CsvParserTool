@@ -72,28 +72,8 @@ namespace CSVParserTool
                     return;
                 }
 
-                int c0 = used.FirstColumn().ColumnNumber();
-                int c1 = used.LastColumn().ColumnNumber();
-                int r0 = used.FirstRow().RowNumber();
-                int r1 = used.LastRow().RowNumber();
-
-                var sb = new StringBuilder();
-                for (int r = r0; r <= r1; r++)
-                {
-                    if (CsvTableParser.IsDescriptionRow(CellToCsvField(ws.Cell(r, c0))))
-                        continue;
-
-                    for (int c = c0; c <= c1; c++)
-                    {
-                        if (c > c0)
-                            sb.Append(',');
-                        sb.Append(EscapeCsv(CellToCsvField(ws.Cell(r, c))));
-                    }
-
-                    sb.AppendLine();
-                }
-
-                File.WriteAllText(csvPath, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                string csv = BuildExportCsvFromWorksheet(ws, used);
+                File.WriteAllText(csvPath, csv, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             }
         }
 
@@ -165,6 +145,69 @@ namespace CSVParserTool
             return "\"" + s.Replace("\"", "\"\"") + "\"";
         }
 
+        /// <summary>CSV·NDB 파이프라인용. 헤더가 <c>#</c> 로 시작하는 열은 통째로 제외(엑셀 원본 시트는 변경하지 않음).</summary>
+        private static string BuildExportCsvFromWorksheet(IXLWorksheet ws, IXLRange used)
+        {
+            int c0 = used.FirstColumn().ColumnNumber();
+            int c1 = used.LastColumn().ColumnNumber();
+            int r0 = used.FirstRow().RowNumber();
+            int r1 = used.LastRow().RowNumber();
+
+            int headerRow = TryFindHeaderRow(ws, r0, r1, c0, c1);
+            bool[] keepMask = headerRow >= 0
+                ? CsvTableParser.BuildExportColumnKeepMask(ReadWorksheetRowCells(ws, headerRow, c0, c1))
+                : CreateKeepAllMask(c1 - c0 + 1);
+
+            var sb = new StringBuilder();
+            for (int r = r0; r <= r1; r++)
+            {
+                string[] cells = ReadWorksheetRowCells(ws, r, c0, c1);
+                AppendExportRowCsv(sb, CsvTableParser.FilterExportColumns(cells, keepMask));
+            }
+
+            return sb.ToString();
+        }
+
+        private static int TryFindHeaderRow(IXLWorksheet ws, int r0, int r1, int c0, int c1)
+        {
+            for (int r = r0; r <= r1; r++)
+            {
+                if (CsvTableParser.FindIdColumnIndex(ReadWorksheetRowCells(ws, r, c0, c1)) >= 0)
+                    return r;
+            }
+
+            return r0;
+        }
+
+        private static bool[] CreateKeepAllMask(int columnCount)
+        {
+            var mask = new bool[columnCount];
+            for (int i = 0; i < columnCount; i++)
+                mask[i] = true;
+            return mask;
+        }
+
+        private static string[] ReadWorksheetRowCells(IXLWorksheet ws, int row, int c0, int c1)
+        {
+            int len = c1 - c0 + 1;
+            var cells = new string[len];
+            for (int i = 0; i < len; i++)
+                cells[i] = CellToCsvField(ws.Cell(row, c0 + i));
+            return cells;
+        }
+
+        private static void AppendExportRowCsv(StringBuilder sb, string[] cells)
+        {
+            for (int i = 0; i < cells.Length; i++)
+            {
+                if (i > 0)
+                    sb.Append(',');
+                sb.Append(EscapeCsv(cells[i] ?? string.Empty));
+            }
+
+            sb.AppendLine();
+        }
+
 
         public static string ConvertXlsxToCsvString(string xlsxPath, int? maxRows = null)
         {
@@ -189,25 +232,8 @@ namespace CSVParserTool
                 if (maxRows.HasValue && maxRows.Value > 0)
                     r1 = Math.Min(r1, r0 + maxRows.Value - 1);
 
-                var sb = new StringBuilder();
-
-                for (int r = r0; r <= r1; r++)
-                {
-                    if (CsvTableParser.IsDescriptionRow(CellToCsvField(ws.Cell(r, c0))))
-                        continue;
-
-                    for (int c = c0; c <= c1; c++)
-                    {
-                        if (c > c0)
-                            sb.Append(',');
-
-                        sb.Append(EscapeCsv(CellToCsvField(ws.Cell(r, c))));
-                    }
-
-                    sb.AppendLine();
-                }
-
-                return sb.ToString(); 
+                var subset = ws.Range(r0, c0, r1, c1);
+                return BuildExportCsvFromWorksheet(ws, subset);
             }
         }
     }

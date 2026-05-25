@@ -13,7 +13,7 @@ alwaysApply: true
 ## Architecture (short)
 
 - `Form1` owns: a single **project root** path (do **not** include `Assets` in the picker — the tool prepends `{root}/Assets/…`), the XLSX source folder, XLSX list + preview, logging, and `FileSystemWatcher` on the XLSX folder.
-- **Data export** (the main export button in the UI): after refreshing XLSX → `Assets/_Game/04Datas/CSV`, writes **CSV** and **NDB** under `Assets/_Game/04Datas/…`, and generated **`.cs`** under `Assets/_Game/03Scripts/04Datas` (includes MessagePack `[Key]` / `[MessagePackObject]`). NDB is encrypted raw CSV bytes.
+- **Data export**: 디스크 `Assets/_Game/DataTables/Content/CSV|Bytes`; Addressables 주소 `Content/CSV/DT_*.csv`, `Content/Bytes/DT_*.bytes`. **`.cs`** → `DataTables/Scripts`.
 - User settings: `Properties/Settings` (`ProjectRootPath`, `ExcelSourceFolderPath`).
 
 ## Editing conventions

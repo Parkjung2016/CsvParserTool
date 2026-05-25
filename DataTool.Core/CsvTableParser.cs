@@ -6,7 +6,7 @@ using System.Text;
 
 namespace CSVParserTool
 {
-    /// <summary>CSV 한 테이블 파싱 결과 — 코드 생성·MessagePack 내보내기 공통.</summary>
+    /// <summary>CSV 한 테이블 파싱 결과 — 코드 생성·MessagePack·NDB보내기 공통.</summary>
     public sealed class CsvTableParseResult
     {
         public string ClassName { get; }
@@ -35,22 +35,64 @@ namespace CSVParserTool
 
     public static class CsvTableParser
     {
-        /// <summary>첫 열 값이 <c>#</c> 로 시작하면 설명 행(데이터 제외).</summary>
-        public static bool IsDescriptionRow(string firstColumnValue)
+        /// <summary>
+        /// 헤더가 <c>#</c> 로 시작하면 그 열 전체를 메모 열로 본다 (<c>#</c>, <c>#설명</c> 등 모두 동일).
+        /// 아래 셀에 <c>#</c> 없이 <c>플레이어</c>만 있어도 CSV·NDB·bytes보내기에서 제외한다. 엑셀 원본은 유지.
+        /// </summary>
+        public static bool IsNoteColumnHeader(string header)
         {
-            if (string.IsNullOrEmpty(firstColumnValue))
+            if (string.IsNullOrEmpty(header))
                 return false;
 
-            string s = firstColumnValue.TrimStart();
+            string s = header.TrimStart();
             return s.Length > 0 && s[0] == '#';
         }
 
-        public static bool IsDescriptionRow(IReadOnlyList<string> cells)
+        public static int FindIdColumnIndex(IReadOnlyList<string> headers)
         {
-            if (cells == null || cells.Count == 0)
-                return false;
+            if (headers == null)
+                return -1;
 
-            return IsDescriptionRow(cells[0]);
+            for (int i = 0; i < headers.Count; i++)
+            {
+                if (string.Equals(headers[i]?.Trim(), "Id", StringComparison.OrdinalIgnoreCase))
+                    return i;
+            }
+
+            return -1;
+        }
+
+        /// <summary>보내기용: <c>#</c> 헤더 열은 false.</summary>
+        public static bool[] BuildExportColumnKeepMask(IReadOnlyList<string> headerCells)
+        {
+            if (headerCells == null || headerCells.Count == 0)
+                return Array.Empty<bool>();
+
+            var mask = new bool[headerCells.Count];
+            for (int i = 0; i < headerCells.Count; i++)
+                mask[i] = !IsNoteColumnHeader(headerCells[i]);
+
+            return mask;
+        }
+
+        /// <summary>보내기용: <c>#</c> 헤더 열만 제거(셀 값은 그대로).</summary>
+        public static string[] FilterExportColumns(IReadOnlyList<string> cells, bool[] exportColumnKeepMask)
+        {
+            if (exportColumnKeepMask == null || exportColumnKeepMask.Length == 0)
+                return Array.Empty<string>();
+
+            var result = new List<string>();
+            int cellCount = cells?.Count ?? 0;
+
+            for (int i = 0; i < exportColumnKeepMask.Length; i++)
+            {
+                if (!exportColumnKeepMask[i])
+                    continue;
+
+                result.Add(i < cellCount ? cells[i] ?? string.Empty : string.Empty);
+            }
+
+            return result.ToArray();
         }
 
         private sealed class EnumAccumulator
@@ -75,18 +117,19 @@ namespace CSVParserTool
 
             string className = CsvClassGenerator.DataRecordClassNameFromFileBaseName(rawName);
 
-            int headerLine = tableLineIndexes[0];
-            var headers = SplitCsvLine(lines[headerLine]);
+            string[] rawHeader = SplitCsvLine(lines[tableLineIndexes[0]]);
+            bool[] keepMask = BuildExportColumnKeepMask(rawHeader);
+            var headers = FilterExportColumns(rawHeader, keepMask);
             var enumAcc = new EnumAccumulator();
 
             var columnTypes = new string[headers.Length];
-            var firstValues = SplitCsvLine(lines[tableLineIndexes[1]]);
+            var firstValues = FilterExportColumns(SplitCsvLine(lines[tableLineIndexes[1]]), keepMask);
             for (int i = 0; i < headers.Length; i++)
                 columnTypes[i] = InferType(firstValues[i], headers[i], enumAcc);
 
             for (int t = 1; t < tableLineIndexes.Count; t++)
             {
-                var values = SplitCsvLine(lines[tableLineIndexes[t]]);
+                var values = FilterExportColumns(SplitCsvLine(lines[tableLineIndexes[t]]), keepMask);
                 for (int i = 0; i < headers.Length; i++)
                 {
                     if (headers[i].StartsWith("E", StringComparison.Ordinal))
@@ -99,7 +142,7 @@ namespace CSVParserTool
 
             var dataRows = new List<string[]>();
             for (int t = 1; t < tableLineIndexes.Count; t++)
-                dataRows.Add(SplitCsvLine(lines[tableLineIndexes[t]]));
+                dataRows.Add(FilterExportColumns(SplitCsvLine(lines[tableLineIndexes[t]]), keepMask));
 
             var enumRead = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
             foreach (var kv in enumAcc.Members)
@@ -143,13 +186,40 @@ namespace CSVParserTool
 
         private static List<int> CollectTableLineIndexes(string[] lines)
         {
-            var indexes = new List<int>();
+            int headerLine = -1;
+
             for (int i = 0; i < lines.Length; i++)
             {
                 if (string.IsNullOrWhiteSpace(lines[i]))
                     continue;
 
-                if (!IsDescriptionRow(SplitCsvLine(lines[i])))
+                if (FindIdColumnIndex(SplitCsvLine(lines[i])) >= 0)
+                {
+                    headerLine = i;
+                    break;
+                }
+            }
+
+            if (headerLine < 0)
+            {
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    if (string.IsNullOrWhiteSpace(lines[i]))
+                        continue;
+
+                    headerLine = i;
+                    break;
+                }
+            }
+
+            if (headerLine < 0)
+                return new List<int>();
+
+            var indexes = new List<int> { headerLine };
+
+            for (int i = headerLine + 1; i < lines.Length; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(lines[i]))
                     indexes.Add(i);
             }
 
