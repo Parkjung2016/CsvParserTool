@@ -11,6 +11,8 @@ namespace CSVParserTool
         [STAThread]
         static void Main()
         {
+            NetFxAssemblyLoadFix.Register();
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new Form1());

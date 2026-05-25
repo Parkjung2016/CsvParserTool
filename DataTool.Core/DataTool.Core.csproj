@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net481</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>preview</LangVersion>
+    <RootNamespace>CSVParserTool</RootNamespace>
+    <AssemblyName>DataTool.Core</AssemblyName>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.104.2" />
+    <PackageReference Include="MessagePack" Version="2.5.192" />
+  </ItemGroup>
+
+</Project>

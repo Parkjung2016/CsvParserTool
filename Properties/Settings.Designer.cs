@@ -12,7 +12,7 @@ namespace CSVParserTool.Properties {
     
     
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
-    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("Microsoft.VisualStudio.Editors.SettingsDesigner.SettingsSingleFileGenerator", "17.14.0.0")]
+    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("Microsoft.VisualStudio.Editors.SettingsDesigner.SettingsSingleFileGenerator", "18.4.0.0")]
     internal sealed partial class Settings : global::System.Configuration.ApplicationSettingsBase {
         
         private static Settings defaultInstance = ((Settings)(global::System.Configuration.ApplicationSettingsBase.Synchronized(new Settings())));
@@ -26,23 +26,24 @@ namespace CSVParserTool.Properties {
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("")]
-        public string OutputFolderPath {
+        public string ProjectRootPath {
             get {
-                return ((string)(this["OutputFolderPath"]));
+                return ((string)(this["ProjectRootPath"]));
             }
             set {
-                this["OutputFolderPath"] = value;
+                this["ProjectRootPath"] = value;
             }
         }
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        public global::System.Collections.Specialized.StringCollection RecentCsvFiles {
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string ExcelSourceFolderPath {
             get {
-                return ((global::System.Collections.Specialized.StringCollection)(this["RecentCsvFiles"]));
+                return ((string)(this["ExcelSourceFolderPath"]));
             }
             set {
-                this["RecentCsvFiles"] = value;
+                this["ExcelSourceFolderPath"] = value;
             }
         }
     }

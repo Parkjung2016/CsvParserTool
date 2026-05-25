@@ -1,0 +1,34 @@
+---
+description: CSV class generation, encryption, and PJDev.Data contracts
+globs:
+  - "**/Csv*.cs"
+  - "**/CryptoUtil.cs"
+  - "**/DllBuilder.cs"
+alwaysApply: false
+---
+
+# CSV → class / NDB pipeline
+
+## `CsvClassGenerator`
+
+- Requires **header row + at least one data row**; infers types from the **first data row** (and header names for enum-style columns).
+- Generated output uses namespace **`PJDev.Data`**, `using MessagePack;`, **`[MessagePackObject]`** + **`[Key(n)]`** on properties, **`[Serializable]`**, plain **`public class`** (must include **`public int Id`** for loaders), property names from sanitized headers.
+- Prefer **`ReadAllLinesSafe`** / **`FileShare.ReadWrite`** when reading CSVs the user may have open elsewhere (match existing file access).
+- Public helpers: `GenerateClass`, `ValidateCsv`, `GenerateAndSave` — keep behavior aligned if one is changed.
+
+## `CsvEncryptor`
+
+- Reads full CSV bytes, encrypts via **`PJDev.Data.CryptoUtil.Encrypt`**, writes binary to the NDB path. Do not change wire format without coordinating Unity/runtime consumers.
+
+## `CryptoUtil`
+
+- **AES-CBC PKCS7** with embedded key/IV — treat as **game/tool coupling**, not general-purpose secrecy; document any algorithm or key changes for downstream projects.
+- Table rows use **`public int Id`**; `DataContainerBase` resolves it via reflection (`DataRowId<T>`).
+
+## `DllBuilder`
+
+- If a legacy Roslyn **`DllBuilder`** path referenced `IDataRecord.cs`, remove that reference; Unity no longer uses that interface.
+
+## Orphan utilities
+
+- **`CsvCreator`** exists for programmatic CSV creation with a sample row; **`Form1`** blank-XLSX creation uses a minimal inline XLSX template — keep both behaviors intentional if you wire `CsvCreator` into the UI.

@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "DataToolGUI",
+      "type": "clr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/bin/Debug/net481/DataToolGUI.exe",
+      "cwd": "${workspaceFolder}/bin/Debug/net481",
+      "stopAtEntry": false
+    },
+    {
+      "name": "DataTool CLI",
+      "type": "clr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/bin/Debug/net481/DataTool.exe",
+      "cwd": "${workspaceFolder}/bin/Debug/net481",
+      "args": ["--help"],
+      "console": "integratedTerminal",
+      "stopAtEntry": false
+    }
+  ]
+}

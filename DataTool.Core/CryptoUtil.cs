@@ -1,7 +1,7 @@
 ﻿using System.Security.Cryptography;
 using System.Text;
 
-namespace Skddkkkk.Data
+namespace PJDev.Data
 {
     public static class CryptoUtil
     {

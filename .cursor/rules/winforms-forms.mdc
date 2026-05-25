@@ -1,0 +1,37 @@
+---
+description: WinForms Form1 partial-class split, control naming, and UI patterns
+globs:
+  - "**/Form*.cs"
+  - "**/Form*.resx"
+alwaysApply: false
+---
+
+# WinForms — form-specific
+
+## Partial class split
+
+- **`Form*.cs`**: event handlers, business logic, path/state fields, `FileSystemWatcher`, log and preview updates.
+- **`Form*.Designer.cs`**: `InitializeComponent`, control field declarations, `Dispose` — prefer editing the **designer-generated region** in the Visual Studio form designer; if editing by hand, keep existing patterns (docking, `SuspendLayout` / `ResumeLayout`).
+
+## Control naming (this project)
+
+- Prefix + PascalCase: `Btn_*`, `Label_*`, `TextBox_*`, `ListBox_*`, `Combo_*`, `Panel_*`, `Txt_*`.
+- Split containers: short camelCase like `splitMain`, `splitRight` is used — **new controls should match the same style** as the rest of the form.
+
+## Threading / UI thread
+
+- If a background path (e.g. `FileSystemWatcher`) touches the UI, keep **`InvokeRequired` → `Invoke`** (same idea as `ReloadDataFileListSafe`).
+
+## Settings and dialogs
+
+- Persisted paths: update `Properties.Settings.Default` then call **`Save()`** (project root, XLSX source folder, etc.).
+- Folder picker: **`Microsoft.WindowsAPICodePack.Dialogs.CommonOpenFileDialog`** with `IsFolderPicker = true` — stay consistent with existing usage.
+
+## Log and feedback
+
+- User-facing messages: `AddLog(message, LogLevel)` and `MessageBox.Show` when needed.
+- Log filtering follows `currentFilter` and `RefreshLogDisplay`; wire new log sources the same way.
+
+## Duplicate types
+
+- `LogLevel` is defined in `Form1.cs`. **`LogEntry` may coexist** as a class at the bottom of `Form1.cs` and in `LogEntry.cs` — when editing the form, confirm which definition is in use and avoid adding redundant duplicate classes.

@@ -1,0 +1,29 @@
+---
+description: CSVParserTool stack, entry points, and general C# WinForms conventions
+alwaysApply: true
+---
+
+# CSVParserTool — core
+
+## Stack
+
+- **.NET Framework 4.8.1**, **Windows Forms** (`WinExe`), **C#** (LangVersion preview in csproj).
+- **Solution**: `CSVParserTool.slnx`; main UI: `Form1` via `Program.cs`.
+
+## Architecture (short)
+
+- `Form1` owns: a single **project root** path (do **not** include `Assets` in the picker — the tool prepends `{root}/Assets/…`), the XLSX source folder, XLSX list + preview, logging, and `FileSystemWatcher` on the XLSX folder.
+- **Data export** (the main export button in the UI): after refreshing XLSX → `Assets/_Game/04Datas/CSV`, writes **CSV** and **NDB** under `Assets/_Game/04Datas/…`, and generated **`.cs`** under `Assets/_Game/03Scripts/04Datas` (includes MessagePack `[Key]` / `[MessagePackObject]`). NDB is encrypted raw CSV bytes.
+- User settings: `Properties/Settings` (`ProjectRootPath`, `ExcelSourceFolderPath`).
+
+## Editing conventions
+
+- Keep changes **scoped** to the request; avoid drive-by refactors across unrelated files.
+- **Partial forms**: logic in `Form1.cs`; controls/layout in `Form1.Designer.cs` (designer-generated — extend via Visual Studio designer when possible).
+- **UI copy** may stay in Korean in the app; stay consistent with existing tone in the same control/feature.
+- Reuse existing patterns (`AddLog`, `CheckDataSettingAvailable`, path helpers) instead of duplicating logic.
+
+## Namespaces
+
+- App code: `CSVParserTool` (e.g. `Form1`, `LogLevel`).
+- Generated Unity table rows are plain **`PJDev.Data`** POCOs with **`public int Id`** (no `IDataRecord`). Do not rename this namespace in generated strings without updating Unity consumers.
