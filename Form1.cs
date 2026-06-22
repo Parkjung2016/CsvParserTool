@@ -43,6 +43,7 @@ namespace CSVParserTool
         private readonly List<FileListEntry> allListEntries = new List<FileListEntry>();
         private readonly Dictionary<string, string> previewCacheByPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private int previewRequestVersion;
+        private string currentPreviewCode = "";
 
         private sealed class FileListEntry
         {
@@ -57,6 +58,166 @@ namespace CSVParserTool
         public Form1()
         {
             InitializeComponent();
+
+            bool darkMode = Properties.Settings.Default.DarkMode;
+            UiTheme.SetDarkMode(darkMode);
+            Chk_DarkMode.Checked = darkMode;
+
+            ApplyUiTheme();
+            ApplyAppIcon();
+        }
+
+        private void ApplyAppIcon()
+        {
+            TrySetFormIcon();
+            TrySetHeaderIcon();
+        }
+
+        private void TrySetFormIcon()
+        {
+            try
+            {
+                string iconPath = ResolveAppIconPath();
+                if (!string.IsNullOrEmpty(iconPath))
+                    Icon = Icon.ExtractAssociatedIcon(iconPath);
+            }
+            catch
+            {
+                // exe 아이콘 로드 실패 시 무시
+            }
+        }
+
+        private void TrySetHeaderIcon()
+        {
+            try
+            {
+                using (Bitmap bitmap = LoadHeaderIconBitmap())
+                {
+                    if (bitmap == null)
+                        return;
+
+                    Image old = PictureBox_HeaderIcon.Image;
+                    PictureBox_HeaderIcon.Image = new Bitmap(bitmap);
+                    old?.Dispose();
+                }
+            }
+            catch
+            {
+                // 헤더 아이콘 로드 실패 시 무시
+            }
+        }
+
+        private static string ResolveAppIconPath()
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string[] candidates =
+            {
+                Path.Combine(baseDir, "Properties", "AppIcon.ico"),
+                Path.Combine(baseDir, "AppIcon.ico"),
+                Application.ExecutablePath
+            };
+
+            foreach (string path in candidates)
+            {
+                if (File.Exists(path))
+                    return path;
+            }
+
+            return Application.ExecutablePath;
+        }
+
+        private static Bitmap LoadHeaderIconBitmap()
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string pngPath = Path.Combine(baseDir, "assets", "pjdev-icon-source-square.png");
+            if (File.Exists(pngPath))
+                return new Bitmap(pngPath);
+
+            string iconPath = ResolveAppIconPath();
+            if (!File.Exists(iconPath))
+                return null;
+
+            using (var icon = new Icon(iconPath, 32, 32))
+            using (var temp = icon.ToBitmap())
+                return new Bitmap(temp);
+        }
+
+        private void Chk_DarkMode_CheckedChanged(object sender, EventArgs e)
+        {
+            bool darkMode = Chk_DarkMode.Checked;
+            UiTheme.SetDarkMode(darkMode);
+            Properties.Settings.Default.DarkMode = darkMode;
+            Properties.Settings.Default.Save();
+
+            ApplyUiTheme();
+            SetPreviewCode(currentPreviewCode);
+            RefreshLogDisplay();
+        }
+
+        private void SetPreviewCode(string code)
+        {
+            currentPreviewCode = code ?? string.Empty;
+            CSharpPreviewHighlighter.Apply(TextBox_Preview, currentPreviewCode, UiTheme.IsDarkMode);
+        }
+
+        private void ApplyUiTheme()
+        {
+            BackColor = UiTheme.AppBackground;
+            Font = UiTheme.FontUi;
+            ForeColor = UiTheme.TextPrimary;
+            Text = "PJDev Data Tool";
+
+            UiTheme.StyleChromePanel(Panel_Header, accent: true);
+            UiTheme.StyleChromePanel(Panel_Top);
+            UiTheme.StyleChromePanel(Panel_Bottom);
+
+            Label_AppTitle.Font = UiTheme.FontTitle;
+            Label_AppTitle.ForeColor = UiTheme.Accent;
+            Label_AppSubtitle.Font = UiTheme.FontSubtitle;
+            Label_AppSubtitle.ForeColor = UiTheme.TextMuted;
+
+            UiTheme.StyleCheckBox(Chk_DarkMode);
+            Chk_DarkMode.BackColor = UiTheme.HeaderBackground;
+
+            PictureBox_HeaderIcon.BackColor = Color.Transparent;
+
+            UiTheme.StyleSectionLabel(Label_SectionList);
+            UiTheme.StyleSectionLabel(Label_SectionPreview);
+            Label_SectionLog.Font = UiTheme.FontSection;
+            Label_SectionLog.ForeColor = UiTheme.LogInfo;
+            Label_SectionLog.AutoSize = true;
+            UiTheme.StyleCaptionLabel(Label_CsvFilter);
+
+            UiTheme.StyleSurfacePanel(Panel_ListCard);
+            UiTheme.StylePreviewPanel(Panel_PreviewCard);
+            UiTheme.StyleLogPanel(Panel_LogCard);
+            Panel_LogHeader.BackColor = UiTheme.LogHeaderBackground;
+
+            UiTheme.StylePrimaryButton(Btn_DataSetting, tall: true);
+            UiTheme.StyleSecondaryButton(Btn_SelectProjectRoot);
+            UiTheme.StyleSecondaryButton(Btn_SelectExcelFolder);
+            UiTheme.StyleSecondaryButton(Btn_OpenOutputFolder);
+            UiTheme.StyleSecondaryButton(Btn_OpenCsvFolder);
+            UiTheme.StyleSecondaryButton(Btn_OpenXlsxFolder);
+            UiTheme.StyleSecondaryButton(Btn_NewCsv);
+
+            UiTheme.StylePathLabel(Label_ProjectRoot);
+            UiTheme.StylePathLabel(Label_ExcelSourcePath);
+            UiTheme.StyleTextField(Txt_CsvFilter);
+            UiTheme.StyleTextField(TextBox_NewCsvName);
+            UiTheme.StyleCombo(Combo_LogFilter);
+            UiTheme.StyleList(ListBox_CsvFiles);
+            UiTheme.StylePreviewBox(TextBox_Preview);
+            UiTheme.StyleLogBox(TextBox_Log);
+
+            splitOuter.BackColor = UiTheme.Border;
+            splitOuter.Panel1.BackColor = UiTheme.AppBackground;
+            splitOuter.Panel2.BackColor = UiTheme.AppBackground;
+            splitWork.BackColor = UiTheme.Border;
+            splitWork.Panel1.BackColor = UiTheme.AppBackground;
+            splitWork.Panel2.BackColor = UiTheme.AppBackground;
+            Panel_LogSection.BackColor = UiTheme.AppBackground;
+            Panel_MainContent.BackColor = UiTheme.AppBackground;
         }
 
         private void Form1_Shown(object sender, EventArgs e)
@@ -71,28 +232,23 @@ namespace CSVParserTool
                 Combo_LogFilter.SelectedIndex = 0;
         }
 
-        /// <summary>
-        /// 오른쪽(미리보기·로그) 폭과 아래 로그 높이를 창 크기에 맞게 한 번 맞춥니다.
-        /// FixedPanel 설정으로 이후 리사이즈는 목록/미리보기 쪽이 유연하게 늘어납니다.
-        /// </summary>
+        /// <summary>사이드바·미리보기·하단 로그 패널 초기 비율.</summary>
         private void LayoutSplitContainers()
         {
-            if (!IsHandleCreated || splitMain.Width <= 0 || splitRight.Height <= 0)
+            if (!IsHandleCreated || splitOuter.Width <= 0 || splitWork.Width <= 0)
                 return;
 
-            const int mainRightPanelPixels = 272;
-            int maxMain = splitMain.Width - splitMain.Panel2MinSize - splitMain.SplitterWidth;
-            int wantMain = splitMain.Width - mainRightPanelPixels - splitMain.SplitterWidth;
-            int mainDist = Math.Max(splitMain.Panel1MinSize, Math.Min(wantMain, maxMain));
-            if (mainDist > 0)
-                splitMain.SplitterDistance = mainDist;
+            const int sidebarWidth = 288;
+            int maxList = splitWork.Width - splitWork.Panel2MinSize - splitWork.SplitterWidth;
+            int listDist = Math.Max(splitWork.Panel1MinSize, Math.Min(sidebarWidth, maxList));
+            if (listDist > 0)
+                splitWork.SplitterDistance = listDist;
 
-            const int logPanelHeight = 148;
-            int maxV = splitRight.Height - splitRight.Panel2MinSize - splitRight.SplitterWidth;
-            int wantV = splitRight.Height - logPanelHeight - splitRight.SplitterWidth;
-            int vDist = Math.Max(splitRight.Panel1MinSize, Math.Min(wantV, maxV));
-            if (vDist > 0)
-                splitRight.SplitterDistance = vDist;
+            const int logHeight = 168;
+            int maxWork = splitOuter.Height - splitOuter.Panel2MinSize - splitOuter.SplitterWidth;
+            int workDist = Math.Max(splitOuter.Panel1MinSize, maxWork - logHeight);
+            if (workDist > 0)
+                splitOuter.SplitterDistance = workDist;
         }
 
         private void Form1_Load(object sender, EventArgs e)
@@ -100,13 +256,8 @@ namespace CSVParserTool
             projectRootPath = Properties.Settings.Default.ProjectRootPath ?? "";
             excelSourceFolderPath = Properties.Settings.Default.ExcelSourceFolderPath ?? "";
 
-            Label_ProjectRoot.Text = Directory.Exists(projectRootPath)
-                ? projectRootPath
-                : "경로 없음";
-
-            Label_ExcelSourcePath.Text = Directory.Exists(excelSourceFolderPath)
-                ? excelSourceFolderPath
-                : "경로 없음";
+            UiTheme.UpdatePathLabel(Label_ProjectRoot, projectRootPath);
+            UiTheme.UpdatePathLabel(Label_ExcelSourcePath, excelSourceFolderPath);
 
             ReloadDataFileList();
 
@@ -367,7 +518,7 @@ namespace CSVParserTool
         {
             if (string.IsNullOrWhiteSpace(xlsxPath) || !File.Exists(xlsxPath))
             {
-                TextBox_Preview.Text = string.Empty;
+                SetPreviewCode(string.Empty);
                 return;
             }
 
@@ -375,24 +526,24 @@ namespace CSVParserTool
             string cacheKey = xlsxPath + "|" + File.GetLastWriteTimeUtc(xlsxPath).Ticks.ToString();
             if (previewCacheByPath.TryGetValue(cacheKey, out string cached))
             {
-                TextBox_Preview.Text = cached;
+                SetPreviewCode(cached);
                 return;
             }
 
-            TextBox_Preview.Text = "// preview loading...";
+            SetPreviewCode("// preview loading...");
             try
             {
                 string preview = await Task.Run(() => CsvClassGenerator.GeneratePreviewFromXlsxFast(xlsxPath, maxRows: 64));
                 if (version != previewRequestVersion)
                     return;
-                TextBox_Preview.Text = preview;
+                SetPreviewCode(preview);
                 previewCacheByPath[cacheKey] = preview;
             }
             catch (Exception ex)
             {
                 if (version != previewRequestVersion)
                     return;
-                TextBox_Preview.Text = string.Empty;
+                SetPreviewCode(string.Empty);
                 AddLog($"미리보기 생성 실패: {ex.Message}", LogLevel.Warning);
             }
         }
@@ -435,7 +586,7 @@ namespace CSVParserTool
                     Properties.Settings.Default.ProjectRootPath = projectRootPath;
                     Properties.Settings.Default.Save();
 
-                    Label_ProjectRoot.Text = projectRootPath;
+                    UiTheme.UpdatePathLabel(Label_ProjectRoot, projectRootPath);
 
                     AddLog(
                         $"프로젝트 루트: {projectRootPath}\n" +
@@ -457,7 +608,7 @@ namespace CSVParserTool
                 if (cfd.ShowDialog() == CommonFileDialogResult.Ok)
                 {
                     excelSourceFolderPath = cfd.FileName;
-                    Label_ExcelSourcePath.Text = excelSourceFolderPath;
+                    UiTheme.UpdatePathLabel(Label_ExcelSourcePath, excelSourceFolderPath);
 
                     Properties.Settings.Default.ExcelSourceFolderPath = excelSourceFolderPath;
                     Properties.Settings.Default.Save();
@@ -510,18 +661,7 @@ namespace CSVParserTool
                 MessageBox.Show(msg, "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
-        private static Color LogLevelLineColor(LogLevel level)
-        {
-            switch (level)
-            {
-                case LogLevel.Warning:
-                    return Color.FromArgb(180, 100, 0);
-                case LogLevel.Error:
-                    return Color.FromArgb(180, 0, 0);
-                default:
-                    return SystemColors.WindowText;
-            }
-        }
+        private static Color LogLevelLineColor(LogLevel level) => UiTheme.LogColor(level);
 
         private void RefreshLogDisplay()
         {

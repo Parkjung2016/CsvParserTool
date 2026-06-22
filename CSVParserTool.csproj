@@ -25,6 +25,8 @@
     <!-- 수동 App.config 리디렉션 사용 (자동 생성은 다중 assemblyBinding 으로 net48에서 실패할 수 있음). -->
     <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
 
+    <ApplicationIcon>Properties\AppIcon.ico</ApplicationIcon>
+
   </PropertyGroup>
 
 
@@ -50,6 +52,8 @@
     <Compile Remove="DataTool.Core\**\*" />
 
     <Compile Remove="DataTool.Cli\**\*" />
+
+    <Compile Remove="scripts\**\*" />
 
   </ItemGroup>
 
@@ -96,6 +100,15 @@
 
 
   <ItemGroup>
+
+    <Content Include="assets\pjdev-icon-source-square.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+
+    <Content Include="Properties\AppIcon.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>Properties\AppIcon.ico</TargetPath>
+    </Content>
 
     <None Update="Properties\Settings.settings">
 
