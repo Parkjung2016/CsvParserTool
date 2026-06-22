@@ -1,0 +1,26 @@
+{
+    "name": "PJDev.Data",
+    "rootNamespace": "PJDev.Data",
+    "references": [
+        "UniTask",
+        "Unity.Addressables",
+        "Unity.ResourceManager",
+        "MessagePack",
+        "CsvHelper"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.cysharp.unitask",
+            "expression": "",
+            "define": "UNITASK_INSTALLED"
+        }
+    ],
+    "noEngineReferences": false
+}

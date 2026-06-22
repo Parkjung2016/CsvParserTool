@@ -142,7 +142,7 @@ namespace CSVParserTool
                         $"Done. ({ok} table(s)" + (failed > 0 ? $", {failed} skipped" : "") + ")\r\n" +
                         "· Scripts: Assets\\_Game\\DataTables\\Scripts\r\n" +
                         "· Content: Assets\\_Game\\DataTables\\Content\\CSV · Bytes (DT_*)\r\n" +
-                        "· Unity: ToolGenerated.g.cs + *Container.cs + MessagePackGenerated.cs (mpc)\r\n" +
+                        "· Unity: PJDev.Data.asmdef + ToolGenerated.g.cs + *Container.cs + MessagePackGenerated.cs (mpc)\r\n" +
                         "  (mpc 실패 시 fallback — 솔루션 루트에서 dotnet tool restore)"
                 };
             }

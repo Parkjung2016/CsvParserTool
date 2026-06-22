@@ -1,0 +1,18 @@
+{
+    "name": "PJDev.Data.Editor",
+    "rootNamespace": "PJDev.Data.Editor",
+    "references": [
+        "PJDev.Data"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
