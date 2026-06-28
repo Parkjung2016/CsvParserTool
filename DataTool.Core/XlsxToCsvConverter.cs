@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using ClosedXML.Excel;
 
 namespace CSVParserTool
@@ -18,26 +20,42 @@ namespace CSVParserTool
 
             Directory.CreateDirectory(csvOutputFolder);
 
-            int n = 0;
-            foreach (string path in Directory.GetFiles(xlsxFolder, "*.xlsx"))
-            {
-                string fileName = Path.GetFileName(path);
-                if (fileName.StartsWith("~$", StringComparison.Ordinal))
-                    continue;
+            string[] paths = Directory.GetFiles(xlsxFolder, "*.xlsx")
+                .Where(path => !Path.GetFileName(path).StartsWith("~$", StringComparison.Ordinal))
+                .ToArray();
 
-                try
-                {
-                    ExportFirstWorksheetToCsv(path, Path.Combine(csvOutputFolder, Path.GetFileNameWithoutExtension(path) + ".csv"));
-                    log?.Invoke($"Excel→CSV: {fileName}");
-                    n++;
-                }
-                catch (Exception ex)
-                {
-                    log?.Invoke($"Excel→CSV 실패 ({fileName}): {ex.Message}");
-                }
+            int converted = 0;
+            object logSync = new object();
+            void LogLine(string message)
+            {
+                if (log == null)
+                    return;
+
+                lock (logSync)
+                    log(message);
             }
 
-            return n;
+            ParallelBatchRunner.ForEach(
+                paths,
+                path =>
+                {
+                    string fileName = Path.GetFileName(path);
+                    try
+                    {
+                        ExportFirstWorksheetToCsv(
+                            path,
+                            Path.Combine(csvOutputFolder, Path.GetFileNameWithoutExtension(path) + ".csv"));
+                        Interlocked.Increment(ref converted);
+                        LogLine($"Excel→CSV: {fileName}");
+                    }
+                    catch (Exception ex)
+                    {
+                        LogLine($"Excel→CSV 실패 ({fileName}): {ex.Message}");
+                    }
+                },
+                batchLog: paths.Length > ParallelBatchRunner.DefaultBatchSize ? LogLine : null);
+
+            return converted;
         }
 
         public static string GetPrimaryCsvPathForWorkbook(string xlsxFullPath, string dataCsvDir)

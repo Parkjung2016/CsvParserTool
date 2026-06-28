@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 namespace CSVParserTool
 {
@@ -64,71 +66,46 @@ namespace CSVParserTool
                 if (csvFiles.Length == 0)
                     return Fail("No DT_*.csv files in the work folder.");
 
-                int ok = 0;
-                int failed = 0;
-                var toolTableClassNames = new List<string>();
-                foreach (string csvPath in csvFiles)
+                var outcomes = new ConcurrentBag<TableExportOutcome>();
+                object logSync = new object();
+                void LogLine(string message)
                 {
-                    string fileName = Path.GetFileNameWithoutExtension(csvPath);
-                    if (string.IsNullOrEmpty(fileName))
-                        continue;
+                    if (log == null)
+                        return;
 
-                    string classFileName = CsvClassGenerator.DataRecordClassNameFromFileBaseName(fileName);
-
-                    try
-                    {
-                        string legacyRecordCs = Path.Combine(scriptsDir, classFileName + ".cs");
-                        if (File.Exists(legacyRecordCs))
-                        {
-                            File.Delete(legacyRecordCs);
-                            log?.Invoke($"Removed legacy script (merged into Container): {legacyRecordCs}");
-                        }
-
-                        string csPath = Path.Combine(scriptsDir, classFileName + "Container.cs");
-                        File.WriteAllText(csPath, CsvClassGenerator.GenerateTableContainerFile(csvPath), Encoding.UTF8);
-                        log?.Invoke($"Script: {csPath}");
-
-                        string legacyCopiedCsv = Path.Combine(dataCsv, classFileName + ".csv");
-                        if (File.Exists(legacyCopiedCsv))
-                        {
-                            File.Delete(legacyCopiedCsv);
-                            log?.Invoke($"Removed legacy copied CSV: {legacyCopiedCsv}");
-                        }
-
-                        string legacyClassBytePath = Path.Combine(bytesDir, classFileName + ".byte");
-                        if (File.Exists(legacyClassBytePath))
-                        {
-                            File.Delete(legacyClassBytePath);
-                            log?.Invoke($"Removed legacy byte file (use DT_ stem): {legacyClassBytePath}");
-                        }
-
-                        string legacyStemBytePath = Path.Combine(bytesDir, fileName + ".byte");
-                        if (File.Exists(legacyStemBytePath))
-                        {
-                            File.Delete(legacyStemBytePath);
-                            log?.Invoke($"Removed legacy byte extension file (use .bytes): {legacyStemBytePath}");
-                        }
-
-                        string bytePath = Path.Combine(bytesDir, fileName + ".bytes");
-                        MessagePackTableExporter.ExportToFile(csvPath, bytePath, classNameOverride: null);
-                        log?.Invoke($"Bytes: {bytePath}");
-
-                        string legacyNdbPath = Path.Combine(legacyNdbDir, classFileName + ".ndb");
-                        if (File.Exists(legacyNdbPath))
-                        {
-                            File.Delete(legacyNdbPath);
-                            log?.Invoke($"Removed legacy NDB: {legacyNdbPath}");
-                        }
-
-                        toolTableClassNames.Add(classFileName);
-                        ok++;
-                    }
-                    catch (Exception ex)
-                    {
-                        failed++;
-                        log?.Invoke($"Skip {Path.GetFileName(csvPath)}: {ex.Message}");
-                    }
+                    lock (logSync)
+                        log(message);
                 }
+
+                ParallelBatchRunner.ForEach(
+                    csvFiles,
+                    csvPath =>
+                    {
+                        TableExportOutcome outcome = ExportSingleTable(
+                            csvPath,
+                            scriptsDir,
+                            dataCsv,
+                            bytesDir,
+                            legacyNdbDir);
+                        outcomes.Add(outcome);
+
+                        if (outcome.LogLines == null)
+                            return;
+
+                        foreach (string line in outcome.LogLines)
+                            LogLine(line);
+                    },
+                    batchLog: csvFiles.Length > ParallelBatchRunner.DefaultBatchSize
+                        ? msg => LogLine(msg)
+                        : null);
+
+                var succeeded = outcomes
+                    .Where(o => o.Success)
+                    .OrderBy(o => o.SourceFileName, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                int ok = succeeded.Count;
+                int failed = outcomes.Count - ok;
+                var toolTableClassNames = succeeded.Select(o => o.ClassFileName).ToList();
 
                 if (ok == 0)
                     return Fail(failed > 0 ? "Every CSV failed to export." : "No CSV exported.");
@@ -150,6 +127,90 @@ namespace CSVParserTool
             {
                 return Fail(ex.Message);
             }
+        }
+
+        private sealed class TableExportOutcome
+        {
+            public bool Success;
+            public string ClassFileName;
+            public string SourceFileName;
+            public List<string> LogLines = new List<string>();
+            public string ErrorMessage;
+        }
+
+        private static TableExportOutcome ExportSingleTable(
+            string csvPath,
+            string scriptsDir,
+            string dataCsv,
+            string bytesDir,
+            string legacyNdbDir)
+        {
+            var outcome = new TableExportOutcome
+            {
+                SourceFileName = Path.GetFileName(csvPath)
+            };
+
+            string fileName = Path.GetFileNameWithoutExtension(csvPath);
+            if (string.IsNullOrEmpty(fileName))
+                return outcome;
+
+            string classFileName = CsvClassGenerator.DataRecordClassNameFromFileBaseName(fileName);
+
+            try
+            {
+                string legacyRecordCs = Path.Combine(scriptsDir, classFileName + ".cs");
+                if (File.Exists(legacyRecordCs))
+                {
+                    File.Delete(legacyRecordCs);
+                    outcome.LogLines.Add($"Removed legacy script (merged into Container): {legacyRecordCs}");
+                }
+
+                string csPath = Path.Combine(scriptsDir, classFileName + "Container.cs");
+                File.WriteAllText(csPath, CsvClassGenerator.GenerateTableContainerFile(csvPath), Encoding.UTF8);
+                outcome.LogLines.Add($"Script: {csPath}");
+
+                string legacyCopiedCsv = Path.Combine(dataCsv, classFileName + ".csv");
+                if (File.Exists(legacyCopiedCsv))
+                {
+                    File.Delete(legacyCopiedCsv);
+                    outcome.LogLines.Add($"Removed legacy copied CSV: {legacyCopiedCsv}");
+                }
+
+                string legacyClassBytePath = Path.Combine(bytesDir, classFileName + ".byte");
+                if (File.Exists(legacyClassBytePath))
+                {
+                    File.Delete(legacyClassBytePath);
+                    outcome.LogLines.Add($"Removed legacy byte file (use DT_ stem): {legacyClassBytePath}");
+                }
+
+                string legacyStemBytePath = Path.Combine(bytesDir, fileName + ".byte");
+                if (File.Exists(legacyStemBytePath))
+                {
+                    File.Delete(legacyStemBytePath);
+                    outcome.LogLines.Add($"Removed legacy byte extension file (use .bytes): {legacyStemBytePath}");
+                }
+
+                string bytePath = Path.Combine(bytesDir, fileName + ".bytes");
+                MessagePackTableExporter.ExportToFile(csvPath, bytePath, classNameOverride: null);
+                outcome.LogLines.Add($"Bytes: {bytePath}");
+
+                string legacyNdbPath = Path.Combine(legacyNdbDir, classFileName + ".ndb");
+                if (File.Exists(legacyNdbPath))
+                {
+                    File.Delete(legacyNdbPath);
+                    outcome.LogLines.Add($"Removed legacy NDB: {legacyNdbPath}");
+                }
+
+                outcome.ClassFileName = classFileName;
+                outcome.Success = true;
+            }
+            catch (Exception ex)
+            {
+                outcome.ErrorMessage = ex.Message;
+                outcome.LogLines.Add($"Skip {Path.GetFileName(csvPath)}: {ex.Message}");
+            }
+
+            return outcome;
         }
 
         private static DataExportResult Fail(string msg) =>
