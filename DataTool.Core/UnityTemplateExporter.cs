@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Reflection;
+using System.Text;
 
 namespace CSVParserTool
 {
@@ -14,9 +16,11 @@ namespace CSVParserTool
                 throw new ArgumentException("Invalid scripts directory.", nameof(scriptsDir));
 
             string templateRoot = ResolveTemplateRoot();
-            if (templateRoot == null)
+            if (templateRoot == null && !HasEmbeddedTemplate("PJDev.Data.asmdef"))
+            {
                 throw new InvalidOperationException(
                     $"Unity template folder '{TemplateFolderName}' not found next to DataTool.Core.");
+            }
 
             Directory.CreateDirectory(scriptsDir);
             string editorDir = Path.Combine(scriptsDir, "Editor");
@@ -43,12 +47,54 @@ namespace CSVParserTool
 
         private static void CopyTemplate(string templateRoot, string relativePath, string destPath, Action<string> log)
         {
+            if (TryReadEmbeddedTemplate(relativePath, out string embedded))
+            {
+                File.WriteAllText(destPath, embedded, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                log?.Invoke($"Deployed: {destPath}");
+                return;
+            }
+
+            if (templateRoot == null)
+                throw new FileNotFoundException("Unity template file not found.", relativePath);
+
             string sourcePath = Path.Combine(templateRoot, relativePath);
             if (!File.Exists(sourcePath))
                 throw new FileNotFoundException("Unity template file not found.", sourcePath);
 
             File.Copy(sourcePath, destPath, overwrite: true);
             log?.Invoke($"Deployed: {destPath}");
+        }
+
+        private static bool HasEmbeddedTemplate(string relativePath) =>
+            TryReadEmbeddedTemplate(relativePath, out _);
+
+        private static bool TryReadEmbeddedTemplate(string relativePath, out string content)
+        {
+            content = null;
+            if (string.IsNullOrWhiteSpace(relativePath))
+                return false;
+
+            string needle = relativePath.Replace('\\', '.').Replace('/', '.');
+            Assembly asm = typeof(UnityTemplateExporter).Assembly;
+            foreach (string name in asm.GetManifestResourceNames())
+            {
+                if (!name.EndsWith(needle, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                using (var stream = asm.GetManifestResourceStream(name))
+                {
+                    if (stream == null)
+                        continue;
+
+                    using (var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+                    {
+                        content = reader.ReadToEnd();
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         private static string ResolveTemplateRoot()

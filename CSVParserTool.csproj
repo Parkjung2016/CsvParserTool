@@ -2,123 +2,118 @@
 
 
 
-  <PropertyGroup>
+	<PropertyGroup>
 
-    <OutputType>WinExe</OutputType>
+		<OutputType>WinExe</OutputType>
 
-    <TargetFramework>net481</TargetFramework>
+		<TargetFramework>net481</TargetFramework>
 
-    <Nullable>disable</Nullable>
+		<Nullable>disable</Nullable>
 
-    <LangVersion>preview</LangVersion>
+		<LangVersion>preview</LangVersion>
 
-    <RootNamespace>CSVParserTool</RootNamespace>
+		<RootNamespace>CSVParserTool</RootNamespace>
 
-    <AssemblyName>DataToolGUI</AssemblyName>
+		<AssemblyName>DataToolGUI</AssemblyName>
 
-    <UseWindowsForms>true</UseWindowsForms>
+		<UseWindowsForms>true</UseWindowsForms>
 
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 
-    <Deterministic>true</Deterministic>
+		<Deterministic>true</Deterministic>
 
-    <!-- 수동 App.config 리디렉션 사용 (자동 생성은 다중 assemblyBinding 으로 net48에서 실패할 수 있음). -->
-    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+		<!-- 수동 App.config 리디렉션 사용 (자동 생성은 다중 assemblyBinding 으로 net48에서 실패할 수 있음). -->
+		<AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
 
-    <ApplicationIcon>Properties\AppIcon.ico</ApplicationIcon>
-
-  </PropertyGroup>
-
-
-
-  <ItemGroup>
-
-    <ProjectReference Include="DataTool.Core\DataTool.Core.csproj" />
-
-  </ItemGroup>
+		<ApplicationIcon>Properties\AppIcon.ico</ApplicationIcon>
+	</PropertyGroup>
 
 
 
-  <ItemGroup>
+	<ItemGroup>
 
-    <PackageReference Include="WindowsAPICodePack" Version="8.0.14" />
+		<ProjectReference Include="DataTool.Core\DataTool.Core.csproj" />
 
-  </ItemGroup>
-
-
-
-  <ItemGroup>
-
-    <Compile Remove="DataTool.Core\**\*" />
-
-    <Compile Remove="DataTool.Cli\**\*" />
-
-    <Compile Remove="scripts\**\*" />
-
-  </ItemGroup>
+	</ItemGroup>
 
 
 
-  <ItemGroup>
+	<ItemGroup>
 
-    <Compile Update="Properties\Resources.Designer.cs">
+		<PackageReference Include="WindowsAPICodePack" Version="8.0.14" />
 
-      <DesignTime>True</DesignTime>
+		<PackageReference Include="Fody" Version="6.8.2" PrivateAssets="all" />
+		<PackageReference Include="Costura.Fody" Version="6.0.0" PrivateAssets="all" />
 
-      <AutoGen>True</AutoGen>
-
-      <DependentUpon>Resources.resx</DependentUpon>
-
-    </Compile>
-
-    <Compile Update="Properties\Settings.Designer.cs">
-
-      <DesignTimeSharedInput>True</DesignTimeSharedInput>
-
-      <AutoGen>True</AutoGen>
-
-      <DependentUpon>Settings.settings</DependentUpon>
-
-    </Compile>
-
-  </ItemGroup>
+	</ItemGroup>
 
 
 
-  <ItemGroup>
+	<ItemGroup>
 
-    <EmbeddedResource Update="Properties\Resources.resx">
+		<Compile Remove="DataTool.Core\**\*" />
 
-      <Generator>ResXFileCodeGenerator</Generator>
+		<Compile Remove="DataTool.Cli\**\*" />
 
-      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+		<Compile Remove="scripts\**\*" />
 
-    </EmbeddedResource>
-
-  </ItemGroup>
+	</ItemGroup>
 
 
 
-  <ItemGroup>
+	<ItemGroup>
 
-    <Content Include="assets\pjdev-icon-source-square.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+		<Compile Update="Properties\Resources.Designer.cs">
 
-    <Content Include="Properties\AppIcon.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>Properties\AppIcon.ico</TargetPath>
-    </Content>
+			<DesignTime>True</DesignTime>
 
-    <None Update="Properties\Settings.settings">
+			<AutoGen>True</AutoGen>
 
-      <Generator>SettingsSingleFileGenerator</Generator>
+			<DependentUpon>Resources.resx</DependentUpon>
 
-      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+		</Compile>
 
-    </None>
+		<Compile Update="Properties\Settings.Designer.cs">
 
-  </ItemGroup>
+			<DesignTimeSharedInput>True</DesignTimeSharedInput>
+
+			<AutoGen>True</AutoGen>
+
+			<DependentUpon>Settings.settings</DependentUpon>
+
+		</Compile>
+
+	</ItemGroup>
+
+
+
+	<ItemGroup>
+
+		<EmbeddedResource Update="Properties\Resources.resx">
+
+			<Generator>ResXFileCodeGenerator</Generator>
+
+			<LastGenOutput>Resources.Designer.cs</LastGenOutput>
+
+		</EmbeddedResource>
+
+	</ItemGroup>
+
+
+
+	<ItemGroup>
+
+		<EmbeddedResource Include="assets\pjdev-icon-source-square.png" />
+
+		<None Update="Properties\Settings.settings">
+
+			<Generator>SettingsSingleFileGenerator</Generator>
+
+			<LastGenOutput>Settings.Designer.cs</LastGenOutput>
+
+		</None>
+
+	</ItemGroup>
 
 
 

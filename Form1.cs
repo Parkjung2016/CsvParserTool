@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -107,31 +108,23 @@ namespace CSVParserTool
             }
         }
 
-        private static string ResolveAppIconPath()
-        {
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            string[] candidates =
-            {
-                Path.Combine(baseDir, "Properties", "AppIcon.ico"),
-                Path.Combine(baseDir, "AppIcon.ico"),
-                Application.ExecutablePath
-            };
-
-            foreach (string path in candidates)
-            {
-                if (File.Exists(path))
-                    return path;
-            }
-
-            return Application.ExecutablePath;
-        }
+        private static string ResolveAppIconPath() =>
+            Application.ExecutablePath;
 
         private static Bitmap LoadHeaderIconBitmap()
         {
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            string pngPath = Path.Combine(baseDir, "assets", "pjdev-icon-source-square.png");
-            if (File.Exists(pngPath))
-                return new Bitmap(pngPath);
+            Assembly asm = typeof(Form1).Assembly;
+            foreach (string name in asm.GetManifestResourceNames())
+            {
+                if (!name.EndsWith("pjdev-icon-source-square.png", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                using (var stream = asm.GetManifestResourceStream(name))
+                {
+                    if (stream != null)
+                        return new Bitmap(stream);
+                }
+            }
 
             string iconPath = ResolveAppIconPath();
             if (!File.Exists(iconPath))
@@ -266,9 +259,9 @@ namespace CSVParserTool
         }
 
         // =========================
-        // 데이터 설정: CLI(DataTool.exe)만 사용 — 완료 후 콘솔에서 pause 로 종료
+        // 데이터 Export (in-process — 단일 EXE 배포)
         // =========================
-        private void Btn_DataSetting_Click(object sender, EventArgs e)
+        private async void Btn_DataSetting_Click(object sender, EventArgs e)
         {
             bool refresh = !string.IsNullOrWhiteSpace(excelSourceFolderPath) && Directory.Exists(excelSourceFolderPath);
             if (refresh && (string.IsNullOrWhiteSpace(projectRootPath) || !Directory.Exists(projectRootPath)))
@@ -295,51 +288,53 @@ namespace CSVParserTool
                 return;
             }
 
-            string baseDir = AppContext.BaseDirectory;
-            string guiBat = Path.Combine(baseDir, "DataToolGui.bat");
-            string exe = Path.Combine(baseDir, "DataTool.exe");
-            if (!File.Exists(guiBat) || !File.Exists(exe))
-            {
-                AddLog("DataToolGui.bat / DataTool.exe 가 실행 폴더에 있어야 합니다. 솔루션 전체를 빌드하세요.", LogLevel.Error);
-                MessageBox.Show(
-                    "DataToolGui.bat 과 DataTool.exe 를 찾을 수 없습니다.\n솔루션을 빌드해 CLI 출력을 DataToolGUI 와 같은 폴더에 두세요.",
-                    "데이터 설정",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-                return;
-            }
-
-            string pr = QuoteCmdArg(projectRootPath);
-            string exportArgs = $"export --project {pr}";
-            if (refresh)
-                exportArgs += $" --excel {QuoteCmdArg(excelSourceFolderPath)} --refresh-xlsx";
-
+            Btn_DataSetting.Enabled = false;
             try
             {
-                // /c: 배치 실행 후 pause 로 "아무 키나 누르면" 창 종료 ( /k 는 창이 안 닫힘 )
-                string batForCmd = "\"" + guiBat + "\"";
-                Process.Start(new ProcessStartInfo
+                AddLog("데이터 Export 시작…", LogLevel.Info);
+
+                DataExportResult result = await Task.Run(() => DataExportService.RunExport(
+                    projectRootPath,
+                    excelSourceFolderPath,
+                    refresh,
+                    ExportLog));
+
+                if (result.Ok)
                 {
-                    FileName = "cmd.exe",
-                    Arguments = "/c " + batForCmd + " " + exportArgs,
-                    WorkingDirectory = baseDir,
-                    UseShellExecute = true
-                });
-                AddLog("CLI에서 데이터 설정을 실행했습니다. 콘솔에서 끝나면 아무 키나 눌러 창을 닫으세요.", LogLevel.Info);
+                    AddLog(result.SummaryLines, LogLevel.Info);
+                    MessageBox.Show(
+                        result.SummaryLines.Replace("\r\n", "\n"),
+                        "데이터 Export",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
+                else
+                {
+                    AddLog(result.ErrorMessage ?? "Export failed.", LogLevel.Error);
+                }
             }
             catch (Exception ex)
             {
                 AddLog(ex.Message, LogLevel.Error);
             }
+            finally
+            {
+                Btn_DataSetting.Enabled = true;
+            }
         }
 
-        private static string QuoteCmdArg(string s)
+        private void ExportLog(string message)
         {
-            if (string.IsNullOrEmpty(s))
-                return "\"\"";
-            if (s.IndexOfAny(new[] { ' ', '\t', '"' }) < 0)
-                return s;
-            return "\"" + s.Replace("\"", "\\\"") + "\"";
+            if (IsDisposed)
+                return;
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => ExportLog(message)));
+                return;
+            }
+
+            AddLog(message, LogLevel.Info);
         }
 
         /// <summary>입력은 테이블 이름(확장자 없음). 파일명으로 쓸 수 있게 정리하고, 없으면 앞에 DT_.</summary>

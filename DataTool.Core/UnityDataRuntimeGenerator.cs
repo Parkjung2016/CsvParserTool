@@ -14,7 +14,11 @@ namespace CSVParserTool
         private const string IfUniTask = "#if UNITASK_INSTALLED";
         private const string EndIf = "#endif";
 
-        public static void Write(string scriptsDir, IReadOnlyList<string> dataClassNames, Action<string> log)
+        public static void Write(
+            string scriptsDir,
+            IReadOnlyList<string> dataClassNames,
+            IReadOnlyList<CsvTableParseResult> tables,
+            Action<string> log)
         {
             if (string.IsNullOrWhiteSpace(scriptsDir))
                 throw new ArgumentException("Invalid scripts directory.", nameof(scriptsDir));
@@ -77,7 +81,7 @@ namespace CSVParserTool
                 log?.Invoke($"Generated: {containerPath}");
             }
 
-            MpcCodeGenerator.Generate(scriptsDir, log);
+            MpcCodeGenerator.Generate(scriptsDir, tables, log);
         }
 
         // =========================

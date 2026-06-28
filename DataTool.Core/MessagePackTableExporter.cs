@@ -41,9 +41,11 @@ namespace CSVParserTool
             }
         }
 
-        public static void ExportToFile(string csvPath, string outputPath, string classNameOverride = null)
+        public static void ExportToFile(string csvPath, string outputPath, string classNameOverride = null) =>
+            ExportToFile(CsvTableParser.Parse(csvPath, classNameOverride), outputPath);
+
+        public static void ExportToFile(CsvTableParseResult table, string outputPath)
         {
-            CsvTableParseResult table = CsvTableParser.Parse(csvPath, classNameOverride);
             byte[] bytes = BuildBytes(table);
             string dir = Path.GetDirectoryName(outputPath);
             if (!string.IsNullOrEmpty(dir))

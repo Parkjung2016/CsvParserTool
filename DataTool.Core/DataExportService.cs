@@ -77,6 +77,7 @@ namespace CSVParserTool
                         log(message);
                 }
 
+                var parseResults = new ConcurrentBag<CsvTableParseResult>();
                 ParallelBatchRunner.ForEach(
                     csvFiles,
                     csvPath =>
@@ -88,6 +89,9 @@ namespace CSVParserTool
                             bytesDir,
                             legacyNdbDir);
                         outcomes.Add(outcome);
+
+                        if (outcome.ParseResult != null)
+                            parseResults.Add(outcome.ParseResult);
 
                         if (outcome.LogLines == null)
                             return;
@@ -110,7 +114,11 @@ namespace CSVParserTool
                 if (ok == 0)
                     return Fail(failed > 0 ? "Every CSV failed to export." : "No CSV exported.");
 
-                UnityDataRuntimeGenerator.Write(scriptsDir, toolTableClassNames, log);
+                UnityDataRuntimeGenerator.Write(
+                    scriptsDir,
+                    toolTableClassNames,
+                    parseResults.OrderBy(t => t.ClassName, StringComparer.OrdinalIgnoreCase).ToList(),
+                    log);
 
                 return new DataExportResult
                 {
@@ -119,8 +127,7 @@ namespace CSVParserTool
                         $"Done. ({ok} table(s)" + (failed > 0 ? $", {failed} skipped" : "") + ")\r\n" +
                         "· Scripts: Assets\\_Game\\DataTables\\Scripts\r\n" +
                         "· Content: Assets\\_Game\\DataTables\\Content\\CSV · Bytes (DT_*)\r\n" +
-                        "· Unity: PJDev.Data.asmdef + ToolGenerated.g.cs + *Container.cs + MessagePackGenerated.cs (mpc)\r\n" +
-                        "  (mpc 실패 시 fallback — 솔루션 루트에서 dotnet tool restore)"
+                        "· Unity: PJDev.Data.asmdef + ToolGenerated.g.cs + *Container.cs + MessagePackGenerated.cs"
                 };
             }
             catch (Exception ex)
@@ -134,6 +141,7 @@ namespace CSVParserTool
             public bool Success;
             public string ClassFileName;
             public string SourceFileName;
+            public CsvTableParseResult ParseResult;
             public List<string> LogLines = new List<string>();
             public string ErrorMessage;
         }
@@ -158,6 +166,9 @@ namespace CSVParserTool
 
             try
             {
+                CsvTableParseResult table = CsvTableParser.Parse(csvPath, classNameOverride: null);
+                outcome.ParseResult = table;
+
                 string legacyRecordCs = Path.Combine(scriptsDir, classFileName + ".cs");
                 if (File.Exists(legacyRecordCs))
                 {
@@ -166,7 +177,7 @@ namespace CSVParserTool
                 }
 
                 string csPath = Path.Combine(scriptsDir, classFileName + "Container.cs");
-                File.WriteAllText(csPath, CsvClassGenerator.GenerateTableContainerFile(csvPath), Encoding.UTF8);
+                File.WriteAllText(csPath, CsvClassGenerator.GenerateTableContainerFile(table), Encoding.UTF8);
                 outcome.LogLines.Add($"Script: {csPath}");
 
                 string legacyCopiedCsv = Path.Combine(dataCsv, classFileName + ".csv");
@@ -191,7 +202,7 @@ namespace CSVParserTool
                 }
 
                 string bytePath = Path.Combine(bytesDir, fileName + ".bytes");
-                MessagePackTableExporter.ExportToFile(csvPath, bytePath, classNameOverride: null);
+                MessagePackTableExporter.ExportToFile(table, bytePath);
                 outcome.LogLines.Add($"Bytes: {bytePath}");
 
                 string legacyNdbPath = Path.Combine(legacyNdbDir, classFileName + ".ndb");

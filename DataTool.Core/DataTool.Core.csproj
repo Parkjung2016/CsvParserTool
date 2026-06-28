@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="UnityTemplates\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="UnityTemplates" />
+    <EmbeddedResource Include="UnityTemplates\**\*" />
   </ItemGroup>
 
 </Project>
