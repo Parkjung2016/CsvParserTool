@@ -8,11 +8,44 @@ using System.Threading;
 
 namespace CSVParserTool
 {
+    public enum DataExportProgressKind
+    {
+        PhaseChanged,
+        TablesStarted,
+        TableCompleted,
+        Finished
+    }
+
+    public sealed class DataExportProgressInfo
+    {
+        public DataExportProgressKind Kind;
+        public string PhaseLabel;
+        /// <summary>0=Excel→CSV, 1=테이블, 2=Unity (없으면 -1)</summary>
+        public int PhaseIndex = -1;
+        public string ItemName;
+        public int CompletedCount;
+        public int TotalCount;
+        public bool Success;
+        public string Message;
+        public IReadOnlyList<string> PendingItemNames;
+    }
+
+    public sealed class DataExportTableResult
+    {
+        public string SourceFileName;
+        public string ClassFileName;
+        public bool Success;
+        public string ErrorMessage;
+    }
+
     public sealed class DataExportResult
     {
         public bool Ok;
         public string ErrorMessage;
         public string SummaryLines;
+        public IReadOnlyList<DataExportTableResult> TableResults = Array.Empty<DataExportTableResult>();
+        public int SucceededCount;
+        public int FailedCount;
     }
 
     /// <summary>Shared by GUI and CLI: refresh XLSX→CSV and export *Container.cs / deploy CSV / MessagePack .bytes.</summary>
@@ -22,10 +55,47 @@ namespace CSVParserTool
             string projectRoot,
             string excelSourceFolder,
             bool refreshAllXlsxFromExcelFolder,
-            Action<string> log)
+            Action<string> log,
+            Action<DataExportProgressInfo> progress = null,
+            string exportVersion = null,
+            bool removeOrphanArtifacts = true)
         {
+            void Report(
+                DataExportProgressKind kind,
+                string phaseLabel = null,
+                int phaseIndex = -1,
+                string itemName = null,
+                int completed = 0,
+                int total = 0,
+                bool success = false,
+                string message = null,
+                IReadOnlyList<string> pendingItems = null)
+            {
+                progress?.Invoke(new DataExportProgressInfo
+                {
+                    Kind = kind,
+                    PhaseLabel = phaseLabel,
+                    PhaseIndex = phaseIndex,
+                    ItemName = itemName,
+                    CompletedCount = completed,
+                    TotalCount = total,
+                    Success = success,
+                    Message = message,
+                    PendingItemNames = pendingItems
+                });
+            }
+
+            bool hasXlsxSource = !string.IsNullOrWhiteSpace(excelSourceFolder) && Directory.Exists(excelSourceFolder);
+            HashSet<string> xlsxDtStems = hasXlsxSource
+                ? DataExportSourceFilter.CollectDtStemsFromXlsxFolder(excelSourceFolder)
+                : null;
+
             if (string.IsNullOrWhiteSpace(projectRoot) || !Directory.Exists(projectRoot))
                 return Fail("Project root is missing or does not exist.");
+
+            string trimmedExportVersion = exportVersion?.Trim();
+            if (!string.IsNullOrEmpty(trimmedExportVersion) && !DataVersion.TryParse(trimmedExportVersion, out _))
+                return Fail($"Export 버전 '{trimmedExportVersion}' 형식이 올바르지 않습니다. (예: 1.0.0)");
 
             if (refreshAllXlsxFromExcelFolder)
             {
@@ -34,10 +104,22 @@ namespace CSVParserTool
 
                 try
                 {
+                    Report(DataExportProgressKind.PhaseChanged, phaseLabel: "Excel → CSV 변환", phaseIndex: 0);
                     string csvDir = DataProjectPaths.DataCsvDir(projectRoot);
                     Directory.CreateDirectory(csvDir);
                     int n = XlsxToCsvConverter.ConvertAllXlsxInFolder(excelSourceFolder, csvDir, log);
                     log?.Invoke($"Excel → CSV refresh ({n} file(s)).");
+
+                    if (removeOrphanArtifacts && xlsxDtStems != null && xlsxDtStems.Count > 0)
+                    {
+                        int removed = DataExportSourceFilter.RemoveOrphanArtifacts(projectRoot, xlsxDtStems, log);
+                        if (removed > 0)
+                            log?.Invoke($"XLSX에 없는 고아 파일 {removed}개 정리.");
+                    }
+                    else if (!removeOrphanArtifacts && xlsxDtStems != null && xlsxDtStems.Count > 0)
+                    {
+                        log?.Invoke("고아 파일 정리: OFF (XLSX에 없는 CSV·Bytes·Container 유지).");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -58,16 +140,47 @@ namespace CSVParserTool
                 Directory.CreateDirectory(dataCsv);
                 Directory.CreateDirectory(bytesDir);
 
-                // 소스/실사용 CSV는 DT_*.csv만 유지합니다.
-                string[] csvFiles = Directory.GetFiles(dataCsv, "*.csv")
+                // Export 대상: XLSX 원본 폴더가 있으면 그 목록과 일치하는 DT_*.csv만.
+                string[] allCsvFiles = Directory.GetFiles(dataCsv, "*.csv")
                     .Where(p => Path.GetFileName(p).StartsWith("DT_", StringComparison.OrdinalIgnoreCase))
-                    .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
                     .ToArray();
+
+                string[] csvFiles;
+                if (hasXlsxSource)
+                {
+                    csvFiles = DataExportSourceFilter.FilterCsvPathsByXlsxStems(allCsvFiles, xlsxDtStems);
+                    if (csvFiles.Length == 0 && xlsxDtStems.Count > 0)
+                    {
+                        return Fail("XLSX 원본 폴더에 테이블은 있지만 CSV가 없습니다. Export 전 Excel→CSV 변환을 실행하세요.");
+                    }
+
+                    if (csvFiles.Length < allCsvFiles.Length)
+                    {
+                        int skipped = allCsvFiles.Length - csvFiles.Length;
+                        log?.Invoke($"XLSX에 없는 CSV {skipped}개는 Export에서 제외합니다.");
+                    }
+                }
+                else
+                {
+                    csvFiles = allCsvFiles
+                        .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+                }
+
                 if (csvFiles.Length == 0)
-                    return Fail("No DT_*.csv files in the work folder.");
+                    return Fail("Export할 DT_*.csv가 없습니다. XLSX 원본 폴더를 지정하세요.");
+
+                var pendingNames = csvFiles.Select(Path.GetFileName).ToArray();
+                Report(
+                    DataExportProgressKind.TablesStarted,
+                    phaseLabel: "테이블 Export",
+                    phaseIndex: 1,
+                    total: csvFiles.Length,
+                    pendingItems: pendingNames);
 
                 var outcomes = new ConcurrentBag<TableExportOutcome>();
                 object logSync = new object();
+                int completedCount = 0;
                 void LogLine(string message)
                 {
                     if (log == null)
@@ -77,6 +190,7 @@ namespace CSVParserTool
                         log(message);
                 }
 
+                var parseOptions = new CsvParseOptions { ExportVersion = trimmedExportVersion };
                 var parseResults = new ConcurrentBag<CsvTableParseResult>();
                 ParallelBatchRunner.ForEach(
                     csvFiles,
@@ -84,24 +198,50 @@ namespace CSVParserTool
                     {
                         TableExportOutcome outcome = ExportSingleTable(
                             csvPath,
+                            excelSourceFolder,
                             scriptsDir,
                             dataCsv,
                             bytesDir,
-                            legacyNdbDir);
+                            legacyNdbDir,
+                            parseOptions);
                         outcomes.Add(outcome);
 
                         if (outcome.ParseResult != null)
                             parseResults.Add(outcome.ParseResult);
 
-                        if (outcome.LogLines == null)
-                            return;
+                        if (outcome.LogLines != null)
+                        {
+                            foreach (string line in outcome.LogLines)
+                                LogLine(line);
+                        }
 
-                        foreach (string line in outcome.LogLines)
-                            LogLine(line);
+                        int done = Interlocked.Increment(ref completedCount);
+                        Report(
+                            DataExportProgressKind.TableCompleted,
+                            phaseLabel: "테이블 Export",
+                            phaseIndex: 1,
+                            itemName: outcome.SourceFileName,
+                            completed: done,
+                            total: csvFiles.Length,
+                            success: outcome.Success,
+                            message: outcome.Success
+                                ? "CSV · Script · Bytes"
+                                : outcome.ErrorMessage ?? "알 수 없는 오류");
                     },
                     batchLog: csvFiles.Length > ParallelBatchRunner.DefaultBatchSize
                         ? msg => LogLine(msg)
                         : null);
+
+                var tableResults = outcomes
+                    .Select(o => new DataExportTableResult
+                    {
+                        SourceFileName = o.SourceFileName,
+                        ClassFileName = o.ClassFileName,
+                        Success = o.Success,
+                        ErrorMessage = o.ErrorMessage
+                    })
+                    .OrderBy(o => o.SourceFileName, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
 
                 var succeeded = outcomes
                     .Where(o => o.Success)
@@ -111,23 +251,79 @@ namespace CSVParserTool
                 int failed = outcomes.Count - ok;
                 var toolTableClassNames = succeeded.Select(o => o.ClassFileName).ToList();
 
-                if (ok == 0)
-                    return Fail(failed > 0 ? "Every CSV failed to export." : "No CSV exported.");
+                if (failed > 0)
+                {
+                    string errorMessage = failed == csvFiles.Length
+                        ? "Every CSV failed to export."
+                        : $"{failed} table(s) failed to export. Export aborted.";
 
+                    log?.Invoke(errorMessage);
+                    Report(
+                        DataExportProgressKind.Finished,
+                        phaseLabel: "Export 실패",
+                        phaseIndex: 1,
+                        completed: ok + failed,
+                        total: csvFiles.Length,
+                        success: false,
+                        message: errorMessage);
+                    return new DataExportResult
+                    {
+                        Ok = false,
+                        ErrorMessage = errorMessage,
+                        TableResults = tableResults,
+                        SucceededCount = ok,
+                        FailedCount = failed
+                    };
+                }
+
+                if (ok == 0)
+                {
+                    Report(
+                        DataExportProgressKind.Finished,
+                        phaseLabel: "Export 실패",
+                        phaseIndex: 1,
+                        completed: 0,
+                        total: csvFiles.Length,
+                        success: false,
+                        message: "No CSV exported.");
+                    return new DataExportResult
+                    {
+                        Ok = false,
+                        ErrorMessage = "No CSV exported.",
+                        TableResults = tableResults,
+                        SucceededCount = ok,
+                        FailedCount = failed
+                    };
+                }
+
+                Report(DataExportProgressKind.PhaseChanged, phaseLabel: "Unity 스크립트 · MessagePack 생성", phaseIndex: 2);
                 UnityDataRuntimeGenerator.Write(
                     scriptsDir,
                     toolTableClassNames,
                     parseResults.OrderBy(t => t.ClassName, StringComparer.OrdinalIgnoreCase).ToList(),
                     log);
 
+                string summary =
+                    $"Done. ({ok} table(s))\r\n" +
+                    "· Scripts: Assets\\_Game\\DataTables\\Scripts\r\n" +
+                    "· Content: Assets\\_Game\\DataTables\\Content\\CSV · Bytes (DT_*)\r\n" +
+                    "· Unity: PJDev.Data.asmdef + ToolGenerated.g.cs + *Container.cs + InfoStorage + MessagePackGenerated.cs";
+
+                Report(
+                    DataExportProgressKind.Finished,
+                    phaseLabel: "Export 완료",
+                    phaseIndex: 2,
+                    completed: ok,
+                    total: csvFiles.Length,
+                    success: true);
+
                 return new DataExportResult
                 {
                     Ok = true,
-                    SummaryLines =
-                        $"Done. ({ok} table(s)" + (failed > 0 ? $", {failed} skipped" : "") + ")\r\n" +
-                        "· Scripts: Assets\\_Game\\DataTables\\Scripts\r\n" +
-                        "· Content: Assets\\_Game\\DataTables\\Content\\CSV · Bytes (DT_*)\r\n" +
-                        "· Unity: PJDev.Data.asmdef + ToolGenerated.g.cs + *Container.cs + MessagePackGenerated.cs"
+                    SummaryLines = summary,
+                    TableResults = tableResults,
+                    SucceededCount = ok,
+                    FailedCount = 0
                 };
             }
             catch (Exception ex)
@@ -148,10 +344,12 @@ namespace CSVParserTool
 
         private static TableExportOutcome ExportSingleTable(
             string csvPath,
+            string excelSourceFolder,
             string scriptsDir,
             string dataCsv,
             string bytesDir,
-            string legacyNdbDir)
+            string legacyNdbDir,
+            CsvParseOptions parseOptions)
         {
             var outcome = new TableExportOutcome
             {
@@ -166,7 +364,11 @@ namespace CSVParserTool
 
             try
             {
-                CsvTableParseResult table = CsvTableParser.Parse(csvPath, classNameOverride: null);
+                CsvTableParseResult table = TryParseTableForExport(
+                    csvPath,
+                    excelSourceFolder,
+                    fileName,
+                    parseOptions);
                 outcome.ParseResult = table;
 
                 string legacyRecordCs = Path.Combine(scriptsDir, classFileName + ".cs");
@@ -179,6 +381,9 @@ namespace CSVParserTool
                 string csPath = Path.Combine(scriptsDir, classFileName + "Container.cs");
                 File.WriteAllText(csPath, CsvClassGenerator.GenerateTableContainerFile(table), Encoding.UTF8);
                 outcome.LogLines.Add($"Script: {csPath}");
+
+                CsvTableParser.WriteDeployedCsv(csvPath, table);
+                outcome.LogLines.Add($"CSV: {csvPath}");
 
                 string legacyCopiedCsv = Path.Combine(dataCsv, classFileName + ".csv");
                 if (File.Exists(legacyCopiedCsv))
@@ -222,6 +427,22 @@ namespace CSVParserTool
             }
 
             return outcome;
+        }
+
+        private static CsvTableParseResult TryParseTableForExport(
+            string csvPath,
+            string excelSourceFolder,
+            string fileName,
+            CsvParseOptions parseOptions)
+        {
+            if (!string.IsNullOrWhiteSpace(excelSourceFolder) && Directory.Exists(excelSourceFolder))
+            {
+                string xlsxPath = Path.Combine(excelSourceFolder, fileName + ".xlsx");
+                if (File.Exists(xlsxPath))
+                    return CsvClassGenerator.ParseTableFromXlsx(xlsxPath, fileName, parseOptions);
+            }
+
+            return CsvTableParser.Parse(csvPath, classNameOverride: null, parseOptions);
         }
 
         private static DataExportResult Fail(string msg) =>

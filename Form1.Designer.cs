@@ -32,6 +32,10 @@ namespace CSVParserTool
             this.Label_ProjectRoot = new System.Windows.Forms.Label();
             this.Btn_SelectExcelFolder = new System.Windows.Forms.Button();
             this.Label_ExcelSourcePath = new System.Windows.Forms.Label();
+            this.Label_ExportVersion = new System.Windows.Forms.Label();
+            this.Flow_ExportOptions = new System.Windows.Forms.FlowLayoutPanel();
+            this.Txt_ExportVersion = new System.Windows.Forms.TextBox();
+            this.Chk_RemoveOrphanArtifacts = new System.Windows.Forms.CheckBox();
             this.tableFilterRow = new System.Windows.Forms.TableLayoutPanel();
             this.Label_CsvFilter = new System.Windows.Forms.Label();
             this.Txt_CsvFilter = new System.Windows.Forms.TextBox();
@@ -45,13 +49,24 @@ namespace CSVParserTool
             this.Panel_MainContent = new System.Windows.Forms.Panel();
             this.splitOuter = new System.Windows.Forms.SplitContainer();
             this.splitWork = new System.Windows.Forms.SplitContainer();
+            this.Panel_ListHeader = new System.Windows.Forms.Panel();
             this.Label_SectionList = new System.Windows.Forms.Label();
+            this.Btn_RefreshList = new System.Windows.Forms.Button();
             this.Panel_ListCard = new System.Windows.Forms.Panel();
             this.ListBox_CsvFiles = new System.Windows.Forms.ListBox();
             this.Label_SectionPreview = new System.Windows.Forms.Label();
             this.Panel_PreviewCard = new System.Windows.Forms.Panel();
             this.TextBox_Preview = new System.Windows.Forms.RichTextBox();
             this.Panel_LogSection = new System.Windows.Forms.Panel();
+            this.Panel_ExportProgress = new System.Windows.Forms.Panel();
+            this.ListView_ExportResults = new System.Windows.Forms.ListView();
+            this.ColumnExportTable = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.ColumnExportStatus = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.ColumnExportMessage = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.Panel_ExportProgressTop = new System.Windows.Forms.Panel();
+            this.SegmentedExportProgress_Export = new CSVParserTool.SegmentedExportProgressBar();
+            this.Label_ExportStatus = new System.Windows.Forms.Label();
+            this.Label_SectionExport = new System.Windows.Forms.Label();
             this.Panel_LogHeader = new System.Windows.Forms.Panel();
             this.Combo_LogFilter = new System.Windows.Forms.ComboBox();
             this.Label_SectionLog = new System.Windows.Forms.Label();
@@ -74,9 +89,12 @@ namespace CSVParserTool
             this.splitWork.Panel1.SuspendLayout();
             this.splitWork.Panel2.SuspendLayout();
             this.splitWork.SuspendLayout();
+            this.Panel_ListHeader.SuspendLayout();
             this.Panel_ListCard.SuspendLayout();
             this.Panel_PreviewCard.SuspendLayout();
             this.Panel_LogSection.SuspendLayout();
+            this.Panel_ExportProgress.SuspendLayout();
+            this.Panel_ExportProgressTop.SuspendLayout();
             this.Panel_LogHeader.SuspendLayout();
             this.Panel_LogCard.SuspendLayout();
             this.SuspendLayout();
@@ -185,9 +203,9 @@ namespace CSVParserTool
             this.Panel_Top.Controls.Add(this.tableTop);
             this.Panel_Top.Dock = System.Windows.Forms.DockStyle.Top;
             this.Panel_Top.Location = new System.Drawing.Point(0, 72);
-            this.Panel_Top.MinimumSize = new System.Drawing.Size(0, 128);
+            this.Panel_Top.MinimumSize = new System.Drawing.Size(0, 166);
             this.Panel_Top.Name = "Panel_Top";
-            this.Panel_Top.Size = new System.Drawing.Size(1140, 128);
+            this.Panel_Top.Size = new System.Drawing.Size(1140, 166);
             this.Panel_Top.TabIndex = 2;
             // 
             // tableTop
@@ -201,15 +219,18 @@ namespace CSVParserTool
             this.tableTop.Controls.Add(this.Label_ProjectRoot, 1, 0);
             this.tableTop.Controls.Add(this.Btn_SelectExcelFolder, 0, 1);
             this.tableTop.Controls.Add(this.Label_ExcelSourcePath, 1, 1);
-            this.tableTop.Controls.Add(this.tableFilterRow, 0, 2);
+            this.tableTop.Controls.Add(this.Label_ExportVersion, 0, 2);
+            this.tableTop.Controls.Add(this.Flow_ExportOptions, 1, 2);
+            this.tableTop.Controls.Add(this.tableFilterRow, 0, 3);
             this.tableTop.Dock = System.Windows.Forms.DockStyle.Fill;
             this.tableTop.Location = new System.Drawing.Point(12, 10);
             this.tableTop.Name = "tableTop";
-            this.tableTop.RowCount = 3;
+            this.tableTop.RowCount = 4;
+            this.tableTop.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 38F));
             this.tableTop.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 38F));
             this.tableTop.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 38F));
             this.tableTop.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 40F));
-            this.tableTop.Size = new System.Drawing.Size(1116, 116);
+            this.tableTop.Size = new System.Drawing.Size(1116, 154);
             this.tableTop.TabIndex = 0;
             // 
             // Btn_SelectProjectRoot
@@ -262,6 +283,56 @@ namespace CSVParserTool
             this.Label_ExcelSourcePath.TabIndex = 11;
             this.Label_ExcelSourcePath.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
             // 
+            // Label_ExportVersion
+            // 
+            this.Label_ExportVersion.Anchor = System.Windows.Forms.AnchorStyles.Left;
+            this.Label_ExportVersion.AutoSize = true;
+            this.Label_ExportVersion.Location = new System.Drawing.Point(0, 84);
+            this.Label_ExportVersion.Margin = new System.Windows.Forms.Padding(0, 0, 8, 0);
+            this.Label_ExportVersion.Name = "Label_ExportVersion";
+            this.Label_ExportVersion.Size = new System.Drawing.Size(78, 15);
+            this.Label_ExportVersion.TabIndex = 12;
+            this.Label_ExportVersion.Text = "Export 버전";
+            this.Label_ExportVersion.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            // 
+            // Flow_ExportOptions
+            // 
+            this.Flow_ExportOptions.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Left | System.Windows.Forms.AnchorStyles.Right)));
+            this.Flow_ExportOptions.AutoSize = true;
+            this.Flow_ExportOptions.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
+            this.Flow_ExportOptions.Controls.Add(this.Txt_ExportVersion);
+            this.Flow_ExportOptions.Controls.Add(this.Chk_RemoveOrphanArtifacts);
+            this.Flow_ExportOptions.Location = new System.Drawing.Point(135, 76);
+            this.Flow_ExportOptions.Margin = new System.Windows.Forms.Padding(3, 0, 0, 4);
+            this.Flow_ExportOptions.Name = "Flow_ExportOptions";
+            this.Flow_ExportOptions.Size = new System.Drawing.Size(981, 27);
+            this.Flow_ExportOptions.TabIndex = 14;
+            this.Flow_ExportOptions.WrapContents = false;
+            // 
+            // Txt_ExportVersion
+            // 
+            this.Txt_ExportVersion.Location = new System.Drawing.Point(0, 2);
+            this.Txt_ExportVersion.Margin = new System.Windows.Forms.Padding(0, 2, 12, 0);
+            this.Txt_ExportVersion.Name = "Txt_ExportVersion";
+            this.Txt_ExportVersion.Size = new System.Drawing.Size(120, 23);
+            this.Txt_ExportVersion.TabIndex = 0;
+            this.Txt_ExportVersion.Text = "1.0.0";
+            this.Txt_ExportVersion.TextChanged += new System.EventHandler(this.Txt_ExportVersion_TextChanged);
+            // 
+            // Chk_RemoveOrphanArtifacts
+            // 
+            this.Chk_RemoveOrphanArtifacts.AutoSize = true;
+            this.Chk_RemoveOrphanArtifacts.Checked = true;
+            this.Chk_RemoveOrphanArtifacts.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.Chk_RemoveOrphanArtifacts.Location = new System.Drawing.Point(135, 4);
+            this.Chk_RemoveOrphanArtifacts.Margin = new System.Windows.Forms.Padding(0, 4, 0, 0);
+            this.Chk_RemoveOrphanArtifacts.Name = "Chk_RemoveOrphanArtifacts";
+            this.Chk_RemoveOrphanArtifacts.Size = new System.Drawing.Size(242, 19);
+            this.Chk_RemoveOrphanArtifacts.TabIndex = 1;
+            this.Chk_RemoveOrphanArtifacts.Text = "XLSX 없는 CSV·Bytes·Container 정리";
+            this.Chk_RemoveOrphanArtifacts.UseVisualStyleBackColor = true;
+            this.Chk_RemoveOrphanArtifacts.CheckedChanged += new System.EventHandler(this.Chk_RemoveOrphanArtifacts_CheckedChanged);
+            // 
             // tableFilterRow
             // 
             this.tableFilterRow.ColumnCount = 4;
@@ -275,7 +346,7 @@ namespace CSVParserTool
             this.tableFilterRow.Controls.Add(this.Btn_NewCsv, 2, 0);
             this.tableFilterRow.Controls.Add(this.TextBox_NewCsvName, 3, 0);
             this.tableFilterRow.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.tableFilterRow.Location = new System.Drawing.Point(0, 80);
+            this.tableFilterRow.Location = new System.Drawing.Point(0, 118);
             this.tableFilterRow.Margin = new System.Windows.Forms.Padding(0, 4, 0, 0);
             this.tableFilterRow.Name = "tableFilterRow";
             this.tableFilterRow.RowCount = 1;
@@ -425,7 +496,7 @@ namespace CSVParserTool
             // splitOuter.Panel2
             // 
             this.splitOuter.Panel2.Controls.Add(this.Panel_LogSection);
-            this.splitOuter.Panel2MinSize = 120;
+            this.splitOuter.Panel2MinSize = 180;
             this.splitOuter.Size = new System.Drawing.Size(1116, 444);
             this.splitOuter.SplitterDistance = 280;
             this.splitOuter.SplitterWidth = 6;
@@ -441,7 +512,7 @@ namespace CSVParserTool
             // splitWork.Panel1
             // 
             this.splitWork.Panel1.Controls.Add(this.Panel_ListCard);
-            this.splitWork.Panel1.Controls.Add(this.Label_SectionList);
+            this.splitWork.Panel1.Controls.Add(this.Panel_ListHeader);
             this.splitWork.Panel1.Padding = new System.Windows.Forms.Padding(0, 0, 8, 0);
             this.splitWork.Panel1MinSize = 200;
             // 
@@ -456,15 +527,39 @@ namespace CSVParserTool
             this.splitWork.SplitterWidth = 6;
             this.splitWork.TabIndex = 0;
             // 
+            // Panel_ListHeader
+            // 
+            this.Panel_ListHeader.Controls.Add(this.Label_SectionList);
+            this.Panel_ListHeader.Controls.Add(this.Btn_RefreshList);
+            this.Panel_ListHeader.Dock = System.Windows.Forms.DockStyle.Top;
+            this.Panel_ListHeader.Location = new System.Drawing.Point(0, 0);
+            this.Panel_ListHeader.Name = "Panel_ListHeader";
+            this.Panel_ListHeader.Size = new System.Drawing.Size(274, 28);
+            this.Panel_ListHeader.TabIndex = 2;
+            // 
             // Label_SectionList
             // 
-            this.Label_SectionList.Dock = System.Windows.Forms.DockStyle.Top;
+            this.Label_SectionList.Dock = System.Windows.Forms.DockStyle.Fill;
             this.Label_SectionList.Location = new System.Drawing.Point(0, 0);
             this.Label_SectionList.Name = "Label_SectionList";
             this.Label_SectionList.Padding = new System.Windows.Forms.Padding(2, 0, 0, 8);
-            this.Label_SectionList.Size = new System.Drawing.Size(274, 28);
-            this.Label_SectionList.TabIndex = 1;
+            this.Label_SectionList.Size = new System.Drawing.Size(198, 28);
+            this.Label_SectionList.TabIndex = 0;
             this.Label_SectionList.Text = "테이블 목록";
+            // 
+            // Btn_RefreshList
+            // 
+            this.Btn_RefreshList.AutoSize = true;
+            this.Btn_RefreshList.Dock = System.Windows.Forms.DockStyle.Right;
+            this.Btn_RefreshList.Location = new System.Drawing.Point(198, 0);
+            this.Btn_RefreshList.Margin = new System.Windows.Forms.Padding(0);
+            this.Btn_RefreshList.Name = "Btn_RefreshList";
+            this.Btn_RefreshList.Padding = new System.Windows.Forms.Padding(6, 2, 6, 2);
+            this.Btn_RefreshList.Size = new System.Drawing.Size(76, 28);
+            this.Btn_RefreshList.TabIndex = 1;
+            this.Btn_RefreshList.Text = "새로고침";
+            this.Btn_RefreshList.UseCompatibleTextRendering = true;
+            this.Btn_RefreshList.Click += new System.EventHandler(this.Btn_RefreshList_Click);
             // 
             // Panel_ListCard
             // 
@@ -486,6 +581,7 @@ namespace CSVParserTool
             this.ListBox_CsvFiles.TabIndex = 0;
             this.ListBox_CsvFiles.SelectedIndexChanged += new System.EventHandler(this.ListBox_CsvFiles_SelectedIndexChanged);
             this.ListBox_CsvFiles.MouseDoubleClick += new System.Windows.Forms.MouseEventHandler(this.ListBox_CsvFiles_MouseDoubleClick);
+            this.ListBox_CsvFiles.KeyDown += new System.Windows.Forms.KeyEventHandler(this.ListBox_CsvFiles_KeyDown);
             // 
             // Label_SectionPreview
             // 
@@ -520,11 +616,102 @@ namespace CSVParserTool
             // 
             this.Panel_LogSection.Controls.Add(this.Panel_LogCard);
             this.Panel_LogSection.Controls.Add(this.Panel_LogHeader);
+            this.Panel_LogSection.Controls.Add(this.Panel_ExportProgress);
             this.Panel_LogSection.Dock = System.Windows.Forms.DockStyle.Fill;
             this.Panel_LogSection.Location = new System.Drawing.Point(0, 0);
             this.Panel_LogSection.Name = "Panel_LogSection";
             this.Panel_LogSection.Size = new System.Drawing.Size(1116, 158);
             this.Panel_LogSection.TabIndex = 0;
+            // 
+            // Panel_ExportProgress
+            // 
+            this.Panel_ExportProgress.Controls.Add(this.ListView_ExportResults);
+            this.Panel_ExportProgress.Controls.Add(this.Panel_ExportProgressTop);
+            this.Panel_ExportProgress.Dock = System.Windows.Forms.DockStyle.Top;
+            this.Panel_ExportProgress.Location = new System.Drawing.Point(0, 0);
+            this.Panel_ExportProgress.Name = "Panel_ExportProgress";
+            this.Panel_ExportProgress.Padding = new System.Windows.Forms.Padding(0, 0, 0, 6);
+            this.Panel_ExportProgress.Size = new System.Drawing.Size(1116, 168);
+            this.Panel_ExportProgress.TabIndex = 2;
+            this.Panel_ExportProgress.Visible = false;
+            // 
+            // ListView_ExportResults
+            // 
+            this.ListView_ExportResults.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
+            this.ColumnExportTable,
+            this.ColumnExportStatus,
+            this.ColumnExportMessage});
+            this.ListView_ExportResults.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.ListView_ExportResults.FullRowSelect = true;
+            this.ListView_ExportResults.HeaderStyle = System.Windows.Forms.ColumnHeaderStyle.Nonclickable;
+            this.ListView_ExportResults.HideSelection = false;
+            this.ListView_ExportResults.Location = new System.Drawing.Point(0, 72);
+            this.ListView_ExportResults.Name = "ListView_ExportResults";
+            this.ListView_ExportResults.Size = new System.Drawing.Size(1116, 90);
+            this.ListView_ExportResults.TabIndex = 1;
+            this.ListView_ExportResults.UseCompatibleStateImageBehavior = false;
+            this.ListView_ExportResults.View = System.Windows.Forms.View.Details;
+            this.ListView_ExportResults.Resize += new System.EventHandler(this.ListView_ExportResults_Resize);
+            // 
+            // ColumnExportTable
+            // 
+            this.ColumnExportTable.Text = "테이블";
+            this.ColumnExportTable.Width = 180;
+            // 
+            // ColumnExportStatus
+            // 
+            this.ColumnExportStatus.Text = "상태";
+            this.ColumnExportStatus.Width = 72;
+            // 
+            // ColumnExportMessage
+            // 
+            this.ColumnExportMessage.Text = "내용";
+            this.ColumnExportMessage.Width = 820;
+            // 
+            // Panel_ExportProgressTop
+            // 
+            this.Panel_ExportProgressTop.Controls.Add(this.SegmentedExportProgress_Export);
+            this.Panel_ExportProgressTop.Controls.Add(this.Label_ExportStatus);
+            this.Panel_ExportProgressTop.Controls.Add(this.Label_SectionExport);
+            this.Panel_ExportProgressTop.Dock = System.Windows.Forms.DockStyle.Top;
+            this.Panel_ExportProgressTop.Location = new System.Drawing.Point(0, 0);
+            this.Panel_ExportProgressTop.Name = "Panel_ExportProgressTop";
+            this.Panel_ExportProgressTop.Padding = new System.Windows.Forms.Padding(2, 0, 2, 4);
+            this.Panel_ExportProgressTop.Size = new System.Drawing.Size(1116, 72);
+            this.Panel_ExportProgressTop.TabIndex = 0;
+            // 
+            // SegmentedExportProgress_Export
+            // 
+            this.SegmentedExportProgress_Export.Dock = System.Windows.Forms.DockStyle.Top;
+            this.SegmentedExportProgress_Export.Location = new System.Drawing.Point(2, 44);
+            this.SegmentedExportProgress_Export.Name = "SegmentedExportProgress_Export";
+            this.SegmentedExportProgress_Export.Size = new System.Drawing.Size(1112, 41);
+            this.SegmentedExportProgress_Export.TabIndex = 2;
+            // 
+            // Label_ExportStatus
+            // 
+            this.Label_ExportStatus.AutoEllipsis = true;
+            this.Label_ExportStatus.Dock = System.Windows.Forms.DockStyle.Top;
+            this.Label_ExportStatus.Location = new System.Drawing.Point(2, 19);
+            this.Label_ExportStatus.Margin = new System.Windows.Forms.Padding(0, 0, 0, 2);
+            this.Label_ExportStatus.Name = "Label_ExportStatus";
+            this.Label_ExportStatus.Padding = new System.Windows.Forms.Padding(0, 0, 0, 4);
+            this.Label_ExportStatus.Size = new System.Drawing.Size(1112, 25);
+            this.Label_ExportStatus.TabIndex = 1;
+            this.Label_ExportStatus.Text = "Export 준비";
+            this.Label_ExportStatus.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            // 
+            // Label_SectionExport
+            // 
+            this.Label_SectionExport.AutoSize = true;
+            this.Label_SectionExport.Dock = System.Windows.Forms.DockStyle.Top;
+            this.Label_SectionExport.Location = new System.Drawing.Point(2, 0);
+            this.Label_SectionExport.Margin = new System.Windows.Forms.Padding(0, 0, 0, 2);
+            this.Label_SectionExport.Name = "Label_SectionExport";
+            this.Label_SectionExport.Padding = new System.Windows.Forms.Padding(0, 2, 0, 0);
+            this.Label_SectionExport.Size = new System.Drawing.Size(44, 17);
+            this.Label_SectionExport.TabIndex = 0;
+            this.Label_SectionExport.Text = "Export";
             // 
             // Panel_LogHeader
             // 
@@ -620,9 +807,14 @@ namespace CSVParserTool
             this.splitWork.Panel2.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.splitWork)).EndInit();
             this.splitWork.ResumeLayout(false);
+            this.Panel_ListHeader.ResumeLayout(false);
+            this.Panel_ListHeader.PerformLayout();
             this.Panel_ListCard.ResumeLayout(false);
             this.Panel_PreviewCard.ResumeLayout(false);
             this.Panel_LogSection.ResumeLayout(false);
+            this.Panel_ExportProgress.ResumeLayout(false);
+            this.Panel_ExportProgressTop.ResumeLayout(false);
+            this.Panel_ExportProgressTop.PerformLayout();
             this.Panel_LogHeader.ResumeLayout(false);
             this.Panel_LogHeader.PerformLayout();
             this.Panel_LogCard.ResumeLayout(false);
@@ -649,11 +841,22 @@ namespace CSVParserTool
         private SplitContainer splitOuter;
         private SplitContainer splitWork;
 
+        private Panel Panel_ListHeader;
         private Panel Panel_ListCard;
         private Panel Panel_PreviewCard;
         private Panel Panel_LogSection;
+        private Panel Panel_ExportProgress;
+        private Panel Panel_ExportProgressTop;
         private Panel Panel_LogHeader;
         private Panel Panel_LogCard;
+
+        private Label Label_SectionExport;
+        private Label Label_ExportStatus;
+        private SegmentedExportProgressBar SegmentedExportProgress_Export;
+        private ListView ListView_ExportResults;
+        private ColumnHeader ColumnExportTable;
+        private ColumnHeader ColumnExportStatus;
+        private ColumnHeader ColumnExportMessage;
 
         private Label Label_SectionList;
         private Label Label_SectionPreview;
@@ -666,9 +869,14 @@ namespace CSVParserTool
         private Button Btn_OpenXlsxFolder;
         private Button Btn_OpenCsvFolder;
         private Button Btn_NewCsv;
+        private Button Btn_RefreshList;
 
         private Label Label_ProjectRoot;
         private Label Label_ExcelSourcePath;
+        private Label Label_ExportVersion;
+        private FlowLayoutPanel Flow_ExportOptions;
+        private TextBox Txt_ExportVersion;
+        private CheckBox Chk_RemoveOrphanArtifacts;
         private TextBox TextBox_NewCsvName;
         private TextBox Txt_CsvFilter;
 

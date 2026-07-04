@@ -43,7 +43,6 @@ namespace CSVParserTool
         private sealed class GenerationModel
         {
             public List<string> EnumNames = new List<string>();
-            public List<string> ListTypes = new List<string>();
             public List<DataClassModel> DataClasses = new List<DataClassModel>();
         }
 
@@ -63,7 +62,6 @@ namespace CSVParserTool
         {
             var model = new GenerationModel();
             var enumSeen = new HashSet<string>(StringComparer.Ordinal);
-            var listSeen = new HashSet<string>(StringComparer.Ordinal);
             var classSeen = new HashSet<string>(StringComparer.Ordinal);
 
             foreach (CsvTableParseResult table in tables)
@@ -82,7 +80,6 @@ namespace CSVParserTool
                             PropertyName = CsvTableParser.SanitizeIdentifier(table.Headers[i]),
                             ColumnType = columnType
                         });
-                        RegisterListType(columnType, listSeen, model.ListTypes);
                         RegisterEnumType(columnType, table.EnumMembers, enumSeen, model.EnumNames);
                     }
 
@@ -100,18 +97,8 @@ namespace CSVParserTool
             }
 
             model.EnumNames.Sort(StringComparer.Ordinal);
-            model.ListTypes.Sort(StringComparer.Ordinal);
             model.DataClasses.Sort((a, b) => string.Compare(a.ClassName, b.ClassName, StringComparison.Ordinal));
             return model;
-        }
-
-        private static void RegisterListType(string columnType, HashSet<string> seen, List<string> target)
-        {
-            if (!columnType.StartsWith("List<", StringComparison.Ordinal))
-                return;
-
-            if (seen.Add(columnType))
-                target.Add(columnType);
         }
 
         private static void RegisterEnumType(
@@ -150,8 +137,6 @@ namespace CSVParserTool
         private static void AppendResolver(StringBuilder sb, GenerationModel model)
         {
             var entries = new List<ResolverEntry>();
-            foreach (string listType in model.ListTypes)
-                entries.Add(new ResolverEntry(ToGlobalType(listType), BuildListFormatterExpr(listType)));
             foreach (string enumName in model.EnumNames)
                 entries.Add(new ResolverEntry($"global::PJDev.Data.{enumName}", $"new {FormatterNamespace}.{enumName}Formatter()"));
             foreach (DataClassModel dataClass in model.DataClasses)
@@ -325,17 +310,15 @@ namespace CSVParserTool
             switch (GetKind(field.ColumnType))
             {
                 case ColumnKind.Int:
-                    return $"writer.Write({access});";
+                case ColumnKind.UInt:
                 case ColumnKind.Float:
-                    return $"writer.Write({access});";
+                case ColumnKind.Double:
                 case ColumnKind.Bool:
                     return $"writer.Write({access});";
                 case ColumnKind.String:
                     return $"global::MessagePack.FormatterResolverExtensions.GetFormatterWithVerify<string>(formatterResolver).Serialize(ref writer, {access}, options);";
                 case ColumnKind.Enum:
                     return $"global::MessagePack.FormatterResolverExtensions.GetFormatterWithVerify<global::PJDev.Data.{field.ColumnType}>(formatterResolver).Serialize(ref writer, {access}, options);";
-                case ColumnKind.List:
-                    return $"global::MessagePack.FormatterResolverExtensions.GetFormatterWithVerify<{ToGlobalType(field.ColumnType)}>(formatterResolver).Serialize(ref writer, {access}, options);";
                 default:
                     throw new InvalidOperationException($"Unsupported column type: {field.ColumnType}");
             }
@@ -348,16 +331,18 @@ namespace CSVParserTool
             {
                 case ColumnKind.Int:
                     return $"{target} = reader.ReadInt32()";
+                case ColumnKind.UInt:
+                    return $"{target} = reader.ReadUInt32()";
                 case ColumnKind.Float:
                     return $"{target} = reader.ReadSingle()";
+                case ColumnKind.Double:
+                    return $"{target} = reader.ReadDouble()";
                 case ColumnKind.Bool:
                     return $"{target} = reader.ReadBoolean()";
                 case ColumnKind.String:
                     return $"{target} = global::MessagePack.FormatterResolverExtensions.GetFormatterWithVerify<string>(formatterResolver).Deserialize(ref reader, options)";
                 case ColumnKind.Enum:
                     return $"{target} = global::MessagePack.FormatterResolverExtensions.GetFormatterWithVerify<global::PJDev.Data.{field.ColumnType}>(formatterResolver).Deserialize(ref reader, options)";
-                case ColumnKind.List:
-                    return $"{target} = global::MessagePack.FormatterResolverExtensions.GetFormatterWithVerify<{ToGlobalType(field.ColumnType)}>(formatterResolver).Deserialize(ref reader, options)";
                 default:
                     throw new InvalidOperationException($"Unsupported column type: {field.ColumnType}");
             }
@@ -366,78 +351,35 @@ namespace CSVParserTool
         private enum ColumnKind
         {
             Int,
+            UInt,
             Float,
+            Double,
             Bool,
             String,
-            Enum,
-            List
+            Enum
         }
 
         private static ColumnKind GetKind(string columnType)
         {
             if (columnType.StartsWith("List<", StringComparison.Ordinal))
-                return ColumnKind.List;
+                throw new InvalidOperationException($"List column type is not supported: {columnType}");
 
             switch (columnType)
             {
                 case "int":
                     return ColumnKind.Int;
+                case "uint":
+                    return ColumnKind.UInt;
                 case "float":
                     return ColumnKind.Float;
+                case "double":
+                    return ColumnKind.Double;
                 case "bool":
                     return ColumnKind.Bool;
                 case "string":
                     return ColumnKind.String;
                 default:
                     return ColumnKind.Enum;
-            }
-        }
-
-        private static string ToGlobalType(string typeName)
-        {
-            if (typeName.StartsWith("List<", StringComparison.Ordinal))
-            {
-                string inner = typeName.Substring("List<".Length);
-                inner = inner.Substring(0, inner.Length - 1);
-                return $"global::System.Collections.Generic.List<{ToGlobalPrimitive(inner)}>";
-            }
-
-            return $"global::PJDev.Data.{typeName}";
-        }
-
-        private static string ToGlobalPrimitive(string typeName)
-        {
-            switch (typeName)
-            {
-                case "int":
-                    return "global::System.Int32";
-                case "float":
-                    return "global::System.Single";
-                case "bool":
-                    return "global::System.Boolean";
-                case "string":
-                    return "global::System.String";
-                default:
-                    return $"global::PJDev.Data.{typeName}";
-            }
-        }
-
-        private static string BuildListFormatterExpr(string listType)
-        {
-            string inner = listType.Substring("List<".Length);
-            inner = inner.Substring(0, inner.Length - 1);
-            switch (inner)
-            {
-                case "int":
-                    return "new global::MessagePack.Formatters.ListFormatter<int>()";
-                case "float":
-                    return "new global::MessagePack.Formatters.ListFormatter<float>()";
-                case "bool":
-                    return "new global::MessagePack.Formatters.ListFormatter<bool>()";
-                case "string":
-                    return "new global::MessagePack.Formatters.ListFormatter<string>()";
-                default:
-                    throw new InvalidOperationException($"Unsupported list element type: {inner}");
             }
         }
 

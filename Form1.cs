@@ -27,6 +27,7 @@ namespace CSVParserTool
 
         private string projectRootPath = "";
         private string excelSourceFolderPath = "";
+        private string exportVersion = "1.0.0";
 
         private string dataCsvDir =>
             string.IsNullOrWhiteSpace(projectRootPath)
@@ -39,6 +40,7 @@ namespace CSVParserTool
                 : DataProjectPaths.GameDatasDir(projectRootPath);
 
         private FileSystemWatcher excelDirWatcher;
+        private System.Windows.Forms.Timer listReloadDebounceTimer;
 
         private string currentSelectedXlsxPath = "";
         private readonly List<FileListEntry> allListEntries = new List<FileListEntry>();
@@ -55,6 +57,12 @@ namespace CSVParserTool
         private List<LogEntry> allLogs = new List<LogEntry>();
         private LogLevel? currentFilter = null;
         private bool splitContainersInitialized;
+        private readonly Dictionary<string, ListViewItem> exportResultItems =
+            new Dictionary<string, ListViewItem>(StringComparer.OrdinalIgnoreCase);
+
+        private bool exportExcelPhaseRan;
+        private bool exportHasTableFailure;
+        private int exportActivePhaseIndex = -1;
 
         public Form1()
         {
@@ -145,6 +153,7 @@ namespace CSVParserTool
             ApplyUiTheme();
             SetPreviewCode(currentPreviewCode);
             RefreshLogDisplay();
+            StyleExportResultRows();
         }
 
         private void SetPreviewCode(string code)
@@ -176,6 +185,7 @@ namespace CSVParserTool
 
             UiTheme.StyleSectionLabel(Label_SectionList);
             UiTheme.StyleSectionLabel(Label_SectionPreview);
+            Panel_ListHeader.BackColor = UiTheme.AppBackground;
             Label_SectionLog.Font = UiTheme.FontSection;
             Label_SectionLog.ForeColor = UiTheme.LogInfo;
             Label_SectionLog.AutoSize = true;
@@ -193,15 +203,27 @@ namespace CSVParserTool
             UiTheme.StyleSecondaryButton(Btn_OpenCsvFolder);
             UiTheme.StyleSecondaryButton(Btn_OpenXlsxFolder);
             UiTheme.StyleSecondaryButton(Btn_NewCsv);
+            UiTheme.StyleSecondaryButton(Btn_RefreshList);
 
             UiTheme.StylePathLabel(Label_ProjectRoot);
             UiTheme.StylePathLabel(Label_ExcelSourcePath);
             UiTheme.StyleTextField(Txt_CsvFilter);
             UiTheme.StyleTextField(TextBox_NewCsvName);
+            UiTheme.StyleTextField(Txt_ExportVersion);
+            UiTheme.StyleCheckBox(Chk_RemoveOrphanArtifacts);
             UiTheme.StyleCombo(Combo_LogFilter);
             UiTheme.StyleList(ListBox_CsvFiles);
             UiTheme.StylePreviewBox(TextBox_Preview);
             UiTheme.StyleLogBox(TextBox_Log);
+            UiTheme.StyleExportListView(ListView_ExportResults);
+            UiTheme.StyleSectionLabel(Label_SectionExport);
+            Panel_ExportProgress.BackColor = UiTheme.SurfaceMuted;
+            Panel_ExportProgressTop.BackColor = UiTheme.SurfaceMuted;
+            SegmentedExportProgress_Export.BackColor = UiTheme.SurfaceMuted;
+            Label_ExportStatus.Font = UiTheme.FontUiMedium;
+            Label_ExportStatus.ForeColor = UiTheme.TextPrimary;
+            Label_ExportStatus.BackColor = UiTheme.SurfaceMuted;
+            SegmentedExportProgress_Export.Invalidate();
 
             splitOuter.BackColor = UiTheme.Border;
             splitOuter.Panel1.BackColor = UiTheme.AppBackground;
@@ -237,7 +259,7 @@ namespace CSVParserTool
             if (listDist > 0)
                 splitWork.SplitterDistance = listDist;
 
-            const int logHeight = 168;
+            int logHeight = Panel_ExportProgress.Visible ? 300 : 200;
             int maxWork = splitOuter.Height - splitOuter.Panel2MinSize - splitOuter.SplitterWidth;
             int workDist = Math.Max(splitOuter.Panel1MinSize, maxWork - logHeight);
             if (workDist > 0)
@@ -248,14 +270,27 @@ namespace CSVParserTool
         {
             projectRootPath = Properties.Settings.Default.ProjectRootPath ?? "";
             excelSourceFolderPath = Properties.Settings.Default.ExcelSourceFolderPath ?? "";
+            exportVersion = NormalizeExportVersion(Properties.Settings.Default.ExportVersion);
 
             UiTheme.UpdatePathLabel(Label_ProjectRoot, projectRootPath);
             UiTheme.UpdatePathLabel(Label_ExcelSourcePath, excelSourceFolderPath);
+            Txt_ExportVersion.Text = exportVersion;
+            Chk_RemoveOrphanArtifacts.Checked = Properties.Settings.Default.RemoveOrphanArtifactsOnExport;
 
             ReloadDataFileList();
 
             AddLog("툴 시작", LogLevel.Info);
             InitDirectoryWatchers();
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            excelDirWatcher?.Dispose();
+            excelDirWatcher = null;
+            listReloadDebounceTimer?.Stop();
+            listReloadDebounceTimer?.Dispose();
+            listReloadDebounceTimer = null;
+            base.OnFormClosed(e);
         }
 
         // =========================
@@ -291,36 +326,333 @@ namespace CSVParserTool
             Btn_DataSetting.Enabled = false;
             try
             {
-                AddLog("데이터 Export 시작…", LogLevel.Info);
+                SaveExportVersionSetting();
+                BeginExportProgressUi();
+                AddLog($"데이터 Export 시작… (버전 {exportVersion}, 고아 정리 {(Chk_RemoveOrphanArtifacts.Checked ? "ON" : "OFF")})", LogLevel.Info);
 
                 DataExportResult result = await Task.Run(() => DataExportService.RunExport(
                     projectRootPath,
                     excelSourceFolderPath,
                     refresh,
-                    ExportLog));
+                    ExportLog,
+                    ReportExportProgress,
+                    exportVersion: exportVersion,
+                    removeOrphanArtifacts: Chk_RemoveOrphanArtifacts.Checked));
+
+                FinishExportProgressUi(result);
 
                 if (result.Ok)
                 {
-                    AddLog(result.SummaryLines, LogLevel.Info);
-                    MessageBox.Show(
-                        result.SummaryLines.Replace("\r\n", "\n"),
-                        "데이터 Export",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Information);
+                    AddLog(result.SummaryLines, result.FailedCount > 0 ? LogLevel.Warning : LogLevel.Info);
                 }
                 else
                 {
-                    AddLog(result.ErrorMessage ?? "Export failed.", LogLevel.Error);
+                    AddLog(result.ErrorMessage ?? "Export failed.", LogLevel.Error, suppressErrorDialog: true);
+                    if (result.FailedCount > 0)
+                        AddLog(BuildFailureSummaryText(result), LogLevel.Error, suppressErrorDialog: true);
                 }
             }
             catch (Exception ex)
             {
+                FinishExportProgressUi(null);
                 AddLog(ex.Message, LogLevel.Error);
             }
             finally
             {
                 Btn_DataSetting.Enabled = true;
             }
+        }
+
+        private void BeginExportProgressUi()
+        {
+            exportResultItems.Clear();
+            ListView_ExportResults.Items.Clear();
+            Panel_ExportProgress.Visible = true;
+            exportExcelPhaseRan = false;
+            exportHasTableFailure = false;
+            exportActivePhaseIndex = -1;
+            Label_ExportStatus.ForeColor = UiTheme.StatusRunning;
+            Label_ExportStatus.Text = "Export 준비 중…";
+            ResetExportSteps();
+            LayoutSplitContainers();
+            AdjustExportResultColumns();
+        }
+
+        private void FinishExportProgressUi(DataExportResult result)
+        {
+            if (result == null)
+            {
+                Label_ExportStatus.ForeColor = UiTheme.LogError;
+                Label_ExportStatus.Text = "Export 중단";
+                if (exportActivePhaseIndex >= 0)
+                    SetExportStep(exportActivePhaseIndex, SegmentedPhaseState.Failed);
+                return;
+            }
+
+            int total = result.TableResults?.Count ?? 0;
+            if (!exportExcelPhaseRan)
+                SetExportStep(0, SegmentedPhaseState.Skipped, "Excel → CSV (생략)");
+
+            if (total > 0)
+            {
+                SegmentedExportProgress_Export.SetTableProgress(
+                    result.SucceededCount + result.FailedCount,
+                    total,
+                    result.FailedCount > 0);
+            }
+            else if (exportExcelPhaseRan && !result.Ok)
+            {
+                SetExportStep(0, SegmentedPhaseState.Failed);
+            }
+
+            if (result.Ok)
+                SetExportStep(2, SegmentedPhaseState.Done);
+            else if (exportActivePhaseIndex >= 2)
+                SetExportStep(2, SegmentedPhaseState.Failed);
+
+            if (result.FailedCount > 0)
+            {
+                Label_ExportStatus.ForeColor = UiTheme.LogError;
+                Label_ExportStatus.Text =
+                    $"Export 실패 — 성공 {result.SucceededCount} · 실패 {result.FailedCount} (아래 목록 확인)";
+            }
+            else if (result.Ok)
+            {
+                Label_ExportStatus.ForeColor = UiTheme.LogSuccess;
+                Label_ExportStatus.Text =
+                    total > 0
+                        ? $"Export 완료 — {result.SucceededCount}/{total} 테이블"
+                        : "Export 완료";
+            }
+            else
+            {
+                Label_ExportStatus.ForeColor = UiTheme.LogError;
+                Label_ExportStatus.Text = result.ErrorMessage ?? "Export 실패";
+            }
+
+            StyleExportResultRows();
+            SelectFirstFailedExportRowInternal(result);
+            if (result.FailedCount > 0)
+                Combo_LogFilter.SelectedItem = "Error";
+            LayoutSplitContainers();
+        }
+
+        private void ReportExportProgress(DataExportProgressInfo info)
+        {
+            if (IsDisposed || info == null)
+                return;
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => ReportExportProgress(info)));
+                return;
+            }
+
+            switch (info.Kind)
+            {
+                case DataExportProgressKind.PhaseChanged:
+                    Label_ExportStatus.ForeColor = UiTheme.StatusRunning;
+                    Label_ExportStatus.Text = info.PhaseLabel ?? "Export 진행 중…";
+                    if (info.PhaseIndex == 0)
+                    {
+                        exportExcelPhaseRan = true;
+                        exportActivePhaseIndex = 0;
+                        SetExportStep(0, SegmentedPhaseState.Running);
+                    }
+                    else if (info.PhaseIndex == 2)
+                    {
+                        exportActivePhaseIndex = 2;
+                        SetExportStep(1, SegmentedPhaseState.Done);
+                        SetExportStep(2, SegmentedPhaseState.Running);
+                    }
+                    break;
+
+                case DataExportProgressKind.TablesStarted:
+                    if (exportExcelPhaseRan)
+                        SetExportStep(0, SegmentedPhaseState.Done);
+                    else
+                        SetExportStep(0, SegmentedPhaseState.Skipped, "Excel → CSV (생략)");
+
+                    exportActivePhaseIndex = 1;
+                    SetExportStep(1, SegmentedPhaseState.Running);
+                    SegmentedExportProgress_Export.SetTableProgress(0, Math.Max(1, info.TotalCount));
+                    Label_ExportStatus.ForeColor = UiTheme.StatusRunning;
+                    Label_ExportStatus.Text = $"테이블 Export 0/{info.TotalCount}";
+                    InitializeExportResultRows(info.PendingItemNames);
+                    break;
+
+                case DataExportProgressKind.TableCompleted:
+                    if (!info.Success)
+                        exportHasTableFailure = true;
+                    SegmentedExportProgress_Export.SetTableProgress(
+                        Math.Min(info.TotalCount, info.CompletedCount),
+                        Math.Max(1, info.TotalCount),
+                        exportHasTableFailure);
+                    Label_ExportStatus.Text =
+                        $"테이블 Export {info.CompletedCount}/{info.TotalCount}" +
+                        (string.IsNullOrEmpty(info.ItemName) ? string.Empty : $" — {info.ItemName}");
+                    UpdateExportResultRow(info.ItemName, info.Success, info.Message);
+                    break;
+
+                case DataExportProgressKind.Finished:
+                    exportActivePhaseIndex = info.PhaseIndex;
+                    if (info.PhaseIndex == 1)
+                    {
+                        if (!info.Success)
+                        {
+                            SegmentedExportProgress_Export.SetTableProgress(
+                                Math.Max(0, info.CompletedCount),
+                                Math.Max(1, info.TotalCount),
+                                hasFailure: true);
+                        }
+                        else
+                        {
+                            SetExportStep(1, SegmentedPhaseState.Done);
+                        }
+                    }
+                    else if (info.PhaseIndex == 2)
+                    {
+                        SetExportStep(2, info.Success ? SegmentedPhaseState.Done : SegmentedPhaseState.Failed);
+                    }
+
+                    Label_ExportStatus.ForeColor = info.Success ? UiTheme.LogSuccess : UiTheme.LogError;
+                    Label_ExportStatus.Text = info.PhaseLabel ?? (info.Success ? "Export 완료" : "Export 실패");
+                    break;
+            }
+        }
+
+        private void ResetExportSteps()
+        {
+            SegmentedExportProgress_Export.Reset();
+        }
+
+        private void SetExportStep(int stepIndex, SegmentedPhaseState state, string caption = null)
+        {
+            SegmentedExportProgress_Export.SetPhaseState(stepIndex, state, caption);
+        }
+
+        private void ListView_ExportResults_Resize(object sender, EventArgs e)
+        {
+            AdjustExportResultColumns();
+        }
+
+        private void AdjustExportResultColumns()
+        {
+            if (ListView_ExportResults.Columns.Count < 3)
+                return;
+
+            int fixedWidth = ListView_ExportResults.Columns[0].Width + ListView_ExportResults.Columns[1].Width + 8;
+            int messageWidth = ListView_ExportResults.ClientSize.Width - fixedWidth;
+            ListView_ExportResults.Columns[2].Width = Math.Max(120, messageWidth);
+        }
+
+        private void InitializeExportResultRows(IReadOnlyList<string> itemNames)
+        {
+            ListView_ExportResults.BeginUpdate();
+            ListView_ExportResults.Items.Clear();
+            exportResultItems.Clear();
+
+            if (itemNames != null)
+            {
+                foreach (string name in itemNames)
+                {
+                    if (string.IsNullOrWhiteSpace(name))
+                        continue;
+
+                    var item = new ListViewItem(name);
+                    item.SubItems.Add("대기");
+                    item.SubItems.Add(string.Empty);
+                    item.ForeColor = UiTheme.StatusPending;
+                    ListView_ExportResults.Items.Add(item);
+                    exportResultItems[name] = item;
+                }
+            }
+
+            ListView_ExportResults.EndUpdate();
+        }
+
+        private void UpdateExportResultRow(string itemName, bool success, string message)
+        {
+            if (string.IsNullOrWhiteSpace(itemName))
+                return;
+
+            if (!exportResultItems.TryGetValue(itemName, out ListViewItem item))
+            {
+                item = new ListViewItem(itemName);
+                item.SubItems.Add(success ? "성공" : "실패");
+                item.SubItems.Add(message ?? string.Empty);
+                item.ForeColor = success ? UiTheme.LogSuccess : UiTheme.LogError;
+                ListView_ExportResults.Items.Add(item);
+                exportResultItems[itemName] = item;
+                return;
+            }
+
+            if (item.SubItems.Count < 2)
+                item.SubItems.Add(success ? "성공" : "실패");
+            else
+                item.SubItems[1].Text = success ? "성공" : "실패";
+
+            if (item.SubItems.Count < 3)
+                item.SubItems.Add(message ?? string.Empty);
+            else
+                item.SubItems[2].Text = message ?? string.Empty;
+
+            item.ForeColor = success ? UiTheme.LogSuccess : UiTheme.LogError;
+        }
+
+        private void StyleExportResultRows()
+        {
+            foreach (ListViewItem item in ListView_ExportResults.Items)
+            {
+                string status = item.SubItems.Count > 1 ? item.SubItems[1].Text : string.Empty;
+                if (status == "성공")
+                    item.ForeColor = UiTheme.LogSuccess;
+                else if (status == "실패")
+                    item.ForeColor = UiTheme.LogError;
+                else
+                    item.ForeColor = UiTheme.StatusPending;
+            }
+        }
+
+        private void SelectFirstFailedExportRowInternal(DataExportResult result)
+        {
+            if (result?.TableResults == null)
+                return;
+
+            foreach (DataExportTableResult row in result.TableResults)
+            {
+                if (row.Success)
+                    continue;
+
+                if (exportResultItems.TryGetValue(row.SourceFileName, out ListViewItem item))
+                {
+                    item.Selected = true;
+                    item.EnsureVisible();
+                    break;
+                }
+            }
+        }
+
+        private static string BuildFailureSummaryText(DataExportResult result)
+        {
+            if (result?.TableResults == null || result.FailedCount == 0)
+                return string.Empty;
+
+            var sb = new StringBuilder();
+            sb.AppendLine("실패한 테이블:");
+            foreach (DataExportTableResult row in result.TableResults.Where(r => !r.Success))
+            {
+                sb.Append("· ");
+                sb.Append(row.SourceFileName);
+                if (!string.IsNullOrWhiteSpace(row.ErrorMessage))
+                {
+                    sb.Append(": ");
+                    sb.Append(row.ErrorMessage);
+                }
+                sb.AppendLine();
+            }
+
+            return sb.ToString().TrimEnd();
         }
 
         private void ExportLog(string message)
@@ -400,8 +732,10 @@ namespace CSVParserTool
         /// <param name="quietLog">파일 감시 등으로 잦이 갱신될 때 로그 생략</param>
         private void ReloadDataFileList(bool quietLog = false)
         {
+            string previousPath = currentSelectedXlsxPath;
             RebuildAllListEntries();
             RefreshListBoxFromFilter();
+            RestoreListSelection(previousPath);
 
             if (!quietLog)
             {
@@ -411,6 +745,36 @@ namespace CSVParserTool
                 else
                     AddLog($"목록: XLSX {nXlsx}개", LogLevel.Info);
             }
+        }
+
+        private void RestoreListSelection(string preferredPath)
+        {
+            if (string.IsNullOrWhiteSpace(preferredPath))
+                return;
+
+            FileListEntry entry = allListEntries.FirstOrDefault(e =>
+                string.Equals(e.FullPath, preferredPath, StringComparison.OrdinalIgnoreCase));
+
+            if (entry == null)
+            {
+                if (!File.Exists(preferredPath))
+                {
+                    currentSelectedXlsxPath = string.Empty;
+                    SetPreviewCode(string.Empty);
+                }
+
+                return;
+            }
+
+            int idx = ListBox_CsvFiles.Items.IndexOf(entry.DisplayName);
+            if (idx < 0)
+                return;
+
+            currentSelectedXlsxPath = entry.FullPath;
+            if (ListBox_CsvFiles.SelectedIndex != idx)
+                ListBox_CsvFiles.SelectedIndex = idx;
+            else
+                RefreshPreviewFromXlsx(entry.FullPath);
         }
 
         private static void SetFolderDialogInitialPath(CommonOpenFileDialog dialog, string currentPath)
@@ -444,23 +808,100 @@ namespace CSVParserTool
 
             if (!string.IsNullOrWhiteSpace(excelSourceFolderPath) && Directory.Exists(excelSourceFolderPath))
             {
-                excelDirWatcher = new FileSystemWatcher(excelSourceFolderPath, "*.xlsx");
-                excelDirWatcher.Changed += (_, __) => ReloadDataFileListSafe();
-                excelDirWatcher.Created += (_, __) => ReloadDataFileListSafe();
-                excelDirWatcher.Deleted += (_, __) => ReloadDataFileListSafe();
+                excelDirWatcher = new FileSystemWatcher(excelSourceFolderPath, "*.xlsx")
+                {
+                    NotifyFilter = NotifyFilters.FileName
+                        | NotifyFilters.DirectoryName
+                        | NotifyFilters.LastWrite
+                        | NotifyFilters.Size
+                        | NotifyFilters.CreationTime,
+                    IncludeSubdirectories = false
+                };
+                excelDirWatcher.Changed += OnExcelDirChanged;
+                excelDirWatcher.Created += OnExcelDirChanged;
+                excelDirWatcher.Deleted += OnExcelDirChanged;
+                excelDirWatcher.Renamed += OnExcelDirRenamed;
                 excelDirWatcher.EnableRaisingEvents = true;
             }
+        }
+
+        private void OnExcelDirChanged(object sender, FileSystemEventArgs e)
+        {
+            if (ShouldIgnoreWatcherPath(e.FullPath))
+                return;
+
+            if (e.ChangeType == WatcherChangeTypes.Deleted
+                && !string.IsNullOrEmpty(currentSelectedXlsxPath)
+                && string.Equals(currentSelectedXlsxPath, e.FullPath, StringComparison.OrdinalIgnoreCase))
+            {
+                currentSelectedXlsxPath = string.Empty;
+            }
+
+            ScheduleReloadDataFileList();
+        }
+
+        private void OnExcelDirRenamed(object sender, RenamedEventArgs e)
+        {
+            if (ShouldIgnoreWatcherPath(e.OldFullPath) && ShouldIgnoreWatcherPath(e.FullPath))
+                return;
+
+            if (!string.IsNullOrEmpty(currentSelectedXlsxPath)
+                && string.Equals(currentSelectedXlsxPath, e.OldFullPath, StringComparison.OrdinalIgnoreCase))
+            {
+                currentSelectedXlsxPath = e.FullPath;
+            }
+
+            ScheduleReloadDataFileList();
+        }
+
+        private static bool ShouldIgnoreWatcherPath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return true;
+
+            string name = Path.GetFileName(path);
+            return name.StartsWith("~$", StringComparison.Ordinal);
+        }
+
+        private void ScheduleReloadDataFileList()
+        {
+            if (IsDisposed)
+                return;
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(ScheduleReloadDataFileList));
+                return;
+            }
+
+            if (listReloadDebounceTimer == null)
+            {
+                listReloadDebounceTimer = new System.Windows.Forms.Timer { Interval = 350 };
+                listReloadDebounceTimer.Tick += (_, __) =>
+                {
+                    listReloadDebounceTimer.Stop();
+                    ReloadDataFileListSafe();
+                };
+            }
+
+            listReloadDebounceTimer.Stop();
+            listReloadDebounceTimer.Start();
         }
 
         private void ReloadDataFileListSafe()
         {
             if (InvokeRequired)
             {
-                Invoke(new Action(ReloadDataFileListSafe));
+                BeginInvoke(new Action(ReloadDataFileListSafe));
                 return;
             }
 
             ReloadDataFileList(quietLog: true);
+        }
+
+        private void Btn_RefreshList_Click(object sender, EventArgs e)
+        {
+            ReloadDataFileList();
         }
 
         // =========================
@@ -509,6 +950,72 @@ namespace CSVParserTool
             }
         }
 
+        private void ListBox_CsvFiles_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode != Keys.Delete)
+                return;
+
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            TryDeleteSelectedXlsxFromList();
+        }
+
+        private void TryDeleteSelectedXlsxFromList()
+        {
+            if (ListBox_CsvFiles.SelectedItems.Count == 0)
+                return;
+
+            var toDelete = new List<FileListEntry>();
+            foreach (object item in ListBox_CsvFiles.SelectedItems)
+            {
+                string displayName = item?.ToString();
+                if (string.IsNullOrEmpty(displayName))
+                    continue;
+
+                FileListEntry entry = allListEntries.FirstOrDefault(x => x.DisplayName == displayName);
+                if (entry != null && !string.IsNullOrEmpty(entry.FullPath) && File.Exists(entry.FullPath))
+                    toDelete.Add(entry);
+            }
+
+            if (toDelete.Count == 0)
+                return;
+
+            string message = toDelete.Count == 1
+                ? $"「{toDelete[0].DisplayName}」을(를) 삭제할까요?\n\nXLSX 원본 폴더에서 파일이 제거됩니다."
+                : $"선택한 XLSX {toDelete.Count}개를 삭제할까요?\n\nXLSX 원본 폴더에서 파일이 제거됩니다.";
+
+            DialogResult confirm = MessageBox.Show(
+                message,
+                "XLSX 삭제",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+
+            if (confirm != DialogResult.Yes)
+                return;
+
+            foreach (FileListEntry entry in toDelete)
+            {
+                try
+                {
+                    File.Delete(entry.FullPath);
+                    AddLog($"XLSX 삭제됨: {entry.DisplayName}", LogLevel.Info);
+
+                    if (string.Equals(currentSelectedXlsxPath, entry.FullPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        currentSelectedXlsxPath = string.Empty;
+                        SetPreviewCode(string.Empty);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AddLog($"XLSX 삭제 실패 ({entry.DisplayName}): {ex.Message}", LogLevel.Error);
+                }
+            }
+
+            ReloadDataFileList(quietLog: true);
+        }
+
         private async void RefreshPreviewFromXlsx(string xlsxPath)
         {
             if (string.IsNullOrWhiteSpace(xlsxPath) || !File.Exists(xlsxPath))
@@ -518,7 +1025,7 @@ namespace CSVParserTool
             }
 
             int version = ++previewRequestVersion;
-            string cacheKey = xlsxPath + "|" + File.GetLastWriteTimeUtc(xlsxPath).Ticks.ToString();
+            string cacheKey = xlsxPath + "|" + exportVersion + "|" + File.GetLastWriteTimeUtc(xlsxPath).Ticks.ToString();
             if (previewCacheByPath.TryGetValue(cacheKey, out string cached))
             {
                 SetPreviewCode(cached);
@@ -528,7 +1035,8 @@ namespace CSVParserTool
             SetPreviewCode("// preview loading...");
             try
             {
-                string preview = await Task.Run(() => CsvClassGenerator.GeneratePreviewFromXlsxFast(xlsxPath, maxRows: 64));
+                string preview = await Task.Run(() =>
+                    CsvClassGenerator.GeneratePreviewFromXlsxFast(xlsxPath, maxRows: 64, exportVersion: exportVersion));
                 if (version != previewRequestVersion)
                     return;
                 SetPreviewCode(preview);
@@ -635,6 +1143,11 @@ namespace CSVParserTool
                         "· 작업 CSV 폴더에 DT_*.csv 가 없습니다. XLSX 원본을 지정한 뒤 데이터 설정으로 엑셀→CSV 갱신을 하거나, DT_ 접두 CSV를 넣어 주세요.");
                 }
             }
+
+            if (string.IsNullOrWhiteSpace(exportVersion))
+                sb.AppendLine("· Export 버전을 입력하세요. (예: 1.0.0)");
+            else if (!DataVersion.TryParse(exportVersion, out _))
+                sb.AppendLine("· Export 버전 형식이 올바르지 않습니다. (예: 1.0.0)");
 
             reason = sb.ToString();
             return string.IsNullOrEmpty(reason);
@@ -764,15 +1277,7 @@ namespace CSVParserTool
 
             try
             {
-                using (var wb = new ClosedXML.Excel.XLWorkbook())
-                {
-                    var ws = wb.AddWorksheet("Sheet1");
-                    ws.Cell(1, 1).Value = "#설명";
-                    ws.Cell(1, 2).Value = "Id";
-                    ws.Cell(2, 1).Value = "플레이어";
-                    ws.Cell(2, 2).Value = 0;
-                    wb.SaveAs(newPath);
-                }
+                XlsxTemplateCreator.CreateNew(newPath, baseName);
 
                 AddLog($"XLSX 생성됨: {baseName}.xlsx", LogLevel.Info);
 
@@ -783,6 +1288,34 @@ namespace CSVParserTool
             {
                 AddLog($"XLSX 생성 실패: {ex.Message}", LogLevel.Error);
             }
+        }
+
+        private void Chk_RemoveOrphanArtifacts_CheckedChanged(object sender, EventArgs e)
+        {
+            Properties.Settings.Default.RemoveOrphanArtifactsOnExport = Chk_RemoveOrphanArtifacts.Checked;
+            Properties.Settings.Default.Save();
+        }
+
+        private void Txt_ExportVersion_TextChanged(object sender, EventArgs e)
+        {
+            exportVersion = Txt_ExportVersion.Text?.Trim() ?? string.Empty;
+            previewCacheByPath.Clear();
+            if (!string.IsNullOrWhiteSpace(currentSelectedXlsxPath))
+                RefreshPreviewFromXlsx(currentSelectedXlsxPath);
+        }
+
+        private void SaveExportVersionSetting()
+        {
+            exportVersion = NormalizeExportVersion(Txt_ExportVersion.Text);
+            Txt_ExportVersion.Text = exportVersion;
+            Properties.Settings.Default.ExportVersion = exportVersion;
+            Properties.Settings.Default.Save();
+        }
+
+        private static string NormalizeExportVersion(string raw)
+        {
+            raw = raw?.Trim() ?? string.Empty;
+            return string.IsNullOrEmpty(raw) ? "1.0.0" : raw;
         }
     }
 

@@ -58,5 +58,29 @@ namespace CSVParserTool.Properties {
                 this["DarkMode"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("1.0.0")]
+        public string ExportVersion {
+            get {
+                return ((string)(this["ExportVersion"]));
+            }
+            set {
+                this["ExportVersion"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool RemoveOrphanArtifactsOnExport {
+            get {
+                return ((bool)(this["RemoveOrphanArtifactsOnExport"]));
+            }
+            set {
+                this["RemoveOrphanArtifactsOnExport"] = value;
+            }
+        }
     }
 }

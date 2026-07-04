@@ -33,6 +33,9 @@ namespace CSVParserTool
         public static Color LogInfo { get; private set; }
         public static Color LogWarning { get; private set; }
         public static Color LogError { get; private set; }
+        public static Color LogSuccess { get; private set; }
+        public static Color StatusPending { get; private set; }
+        public static Color StatusRunning { get; private set; }
 
         public static readonly Font FontUi = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
         public static readonly Font FontUiMedium = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point);
@@ -95,6 +98,9 @@ namespace CSVParserTool
             AccentPressed = Color.FromArgb(30, 64, 175);
             LogWarning = Color.FromArgb(251, 191, 36);
             LogError = Color.FromArgb(248, 113, 113);
+            LogSuccess = Color.FromArgb(74, 222, 128);
+            StatusPending = TextMuted;
+            StatusRunning = Accent;
         }
 
         public static Color LogColor(LogLevel level)
@@ -214,6 +220,27 @@ namespace CSVParserTool
             box.BorderStyle = BorderStyle.None;
             box.BackColor = LogBackground;
             box.ForeColor = LogText;
+        }
+
+        internal static void StyleProgressBar(ProgressBar bar)
+        {
+            bar.Style = ProgressBarStyle.Continuous;
+            bar.Minimum = 0;
+            bar.Maximum = 100;
+            bar.Value = 0;
+            bar.Height = 18;
+        }
+
+        internal static void StyleExportListView(ListView listView)
+        {
+            listView.View = View.Details;
+            listView.FullRowSelect = true;
+            listView.HeaderStyle = ColumnHeaderStyle.Nonclickable;
+            listView.BorderStyle = BorderStyle.None;
+            listView.BackColor = Surface;
+            listView.ForeColor = TextPrimary;
+            listView.Font = FontUi;
+            listView.GridLines = true;
         }
 
         internal static void StylePrimaryButton(Button button, bool tall = false)

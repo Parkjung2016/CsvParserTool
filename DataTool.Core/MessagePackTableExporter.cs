@@ -7,7 +7,7 @@ using MessagePack;
 
 namespace CSVParserTool
 {
-    /// <summary>테이블 CSV → Unity에서 역직렬화 가능한 MessagePack 바이너리(<c>List&lt;T&gt;</c> 배열 레이아웃).</summary>
+    /// <summary>테이블 CSV → Unity에서 역직렬화 가능한 MessagePack 바이너리.</summary>
     public static class MessagePackTableExporter
     {
         private sealed class GrowingBufferWriter : IBufferWriter<byte>
@@ -79,14 +79,6 @@ namespace CSVParserTool
             string cell,
             IReadOnlyDictionary<string, IReadOnlyList<string>> enums)
         {
-            if (columnType.StartsWith("List<", StringComparison.Ordinal))
-            {
-                string elem = columnType.Substring("List<".Length);
-                elem = elem.Substring(0, elem.Length - 1);
-                WriteList(ref writer, elem, cell);
-                return;
-            }
-
             if (enums != null && enums.TryGetValue(columnType, out IReadOnlyList<string> members))
             {
                 string id = CsvTableParser.SanitizeIdentifier(cell.Trim());
@@ -121,10 +113,20 @@ namespace CSVParserTool
                         iv = 0;
                     writer.Write(iv);
                     break;
+                case "uint":
+                    if (!uint.TryParse(cell, NumberStyles.Integer, CultureInfo.InvariantCulture, out uint uv))
+                        uv = 0;
+                    writer.Write(uv);
+                    break;
                 case "float":
                     if (!float.TryParse(cell, NumberStyles.Float, CultureInfo.InvariantCulture, out float fv))
                         fv = 0f;
                     writer.Write(fv);
+                    break;
+                case "double":
+                    if (!double.TryParse(cell, NumberStyles.Float, CultureInfo.InvariantCulture, out double dv))
+                        dv = 0d;
+                    writer.Write(dv);
                     break;
                 case "bool":
                     if (!bool.TryParse(cell, out bool bv))
@@ -134,44 +136,6 @@ namespace CSVParserTool
                 default:
                     writer.Write(NormalizeStringCell(cell));
                     break;
-            }
-        }
-
-        private static void WriteList(ref MessagePackWriter writer, string elementType, string cell)
-        {
-            cell = cell.Trim();
-            if (string.IsNullOrEmpty(cell))
-            {
-                writer.WriteArrayHeader(0);
-                return;
-            }
-
-            string[] parts = cell.Split('|');
-            writer.WriteArrayHeader(parts.Length);
-            foreach (string part in parts)
-            {
-                string p = part.Trim();
-                switch (elementType)
-                {
-                    case "int":
-                        if (!int.TryParse(p, NumberStyles.Integer, CultureInfo.InvariantCulture, out int iv))
-                            iv = 0;
-                        writer.Write(iv);
-                        break;
-                    case "float":
-                        if (!float.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out float fv))
-                            fv = 0f;
-                        writer.Write(fv);
-                        break;
-                    case "bool":
-                        if (!bool.TryParse(p, out bool bv))
-                            bv = false;
-                        writer.Write(bv);
-                        break;
-                    default:
-                        writer.Write(NormalizeStringCell(p));
-                        break;
-                }
             }
         }
 

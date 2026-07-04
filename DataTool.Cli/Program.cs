@@ -41,11 +41,13 @@ namespace DataTool.Cli
         {
             Console.WriteLine("DataTool — CLI (same pipeline as DataToolGUI)");
             Console.WriteLine();
-            Console.WriteLine("  DataTool export --project <dir> [--excel <xlsxSourceDir>] [--refresh-xlsx]");
+            Console.WriteLine("  DataTool export --project <dir> [--excel <xlsxSourceDir>] [--refresh-xlsx] [--version 1.0.0] [--no-orphan-cleanup]");
             Console.WriteLine();
             Console.WriteLine("  --project      Unity project root (do NOT select the Assets folder).");
             Console.WriteLine("  --excel        XLSX source folder (optional; used with --refresh-xlsx).");
             Console.WriteLine("  --refresh-xlsx Run Excel→CSV for all .xlsx in --excel before export.");
+            Console.WriteLine("  --version      Export version; columns with version <= this are included (default: all if omitted).");
+            Console.WriteLine("  --no-orphan-cleanup  Keep CSV/Bytes/Container (and .meta) not listed in --excel.");
             Console.WriteLine("  Exports DT_* → DataTables\\Content\\CSV|Bytes, DataTables\\Scripts.");
             Console.WriteLine();
             Console.WriteLine("Examples:");
@@ -83,13 +85,17 @@ namespace DataTool.Cli
             }
 
             opt.TryGetValue("excel", out string excel);
+            opt.TryGetValue("version", out string exportVersion);
             bool refresh = opt.ContainsKey("refresh-xlsx");
+            bool removeOrphanArtifacts = !opt.ContainsKey("no-orphan-cleanup");
 
             var result = DataExportService.RunExport(
                 project,
                 excel,
                 refresh,
-                line => Console.WriteLine(line));
+                line => Console.WriteLine(line),
+                exportVersion: exportVersion,
+                removeOrphanArtifacts: removeOrphanArtifacts);
 
             if (!result.Ok)
             {

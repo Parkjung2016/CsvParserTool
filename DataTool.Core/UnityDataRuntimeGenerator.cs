@@ -9,9 +9,12 @@ namespace CSVParserTool
     {
         public const string GlobalDataContainerFileName = "GlobalDataContainer.ToolGenerated.g.cs";
         public const string DataContainerBaseFileName = "DataContainerBase.ToolGenerated.g.cs";
+        public const string InfoStorageFileName = "InfoStorage.ToolGenerated.g.cs";
         public const string DataSheetLoaderFileName = "DataSheetLoader.ToolGenerated.g.cs";
+        private const string ObsoleteGlobalInfoContainerFileName = "GlobalInfoContainer.ToolGenerated.g.cs";
 
         private const string IfUniTask = "#if UNITASK_INSTALLED";
+        private const string ElseNoUniTask = "#else";
         private const string EndIf = "#endif";
 
         public static void Write(
@@ -47,6 +50,10 @@ namespace CSVParserTool
             File.WriteAllText(basePath, BuildDataContainerBase(), new UTF8Encoding(false));
             log?.Invoke($"Generated: {basePath}");
 
+            string infoStoragePath = Path.Combine(scriptsDir, InfoStorageFileName);
+            File.WriteAllText(infoStoragePath, BuildInfoStorageTypes(), new UTF8Encoding(false));
+            log?.Invoke($"Generated: {infoStoragePath}");
+
             string loaderPath = Path.Combine(scriptsDir, DataSheetLoaderFileName);
             File.WriteAllText(loaderPath, BuildDataSheetLoader(), new UTF8Encoding(false));
             log?.Invoke($"Generated: {loaderPath}");
@@ -70,6 +77,8 @@ namespace CSVParserTool
             string globalPath = Path.Combine(scriptsDir, GlobalDataContainerFileName);
             File.WriteAllText(globalPath, BuildGlobalDataContainer(unique), new UTF8Encoding(false));
             log?.Invoke($"Generated: {globalPath}");
+
+            RemoveObsoleteGeneratedFile(scriptsDir, ObsoleteGlobalInfoContainerFileName, log);
 
             foreach (var name in unique)
             {
@@ -125,6 +134,23 @@ namespace CSVParserTool
             sb.AppendLine("        public async UniTask LoadAllAsync()");
             sb.AppendLine("        {");
             sb.AppendLine("            await DataSheetLoader.LoadAllContainersAsync(this);");
+            sb.AppendLine("            await InfoStorageRegistry.LoadAllAsync();");
+            sb.AppendLine();
+            sb.AppendLine("            getters = new Dictionary<Type, Func<int, object>>");
+            sb.AppendLine("            {");
+
+            foreach (var name in classNames)
+            {
+                sb.AppendLine($"                {{ typeof({name}), id => this.{name}.Get(id) }},");
+            }
+
+            sb.AppendLine("            };");
+            sb.AppendLine("        }");
+            sb.AppendLine(ElseNoUniTask);
+            sb.AppendLine("        public void LoadAll()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            DataSheetLoader.LoadAllContainers(this);");
+            sb.AppendLine("            InfoStorageRegistry.LoadAll();");
             sb.AppendLine();
             sb.AppendLine("            getters = new Dictionary<Type, Func<int, object>>");
             sb.AppendLine("            {");
@@ -208,9 +234,6 @@ namespace CSVParserTool
             sb.AppendLine("        /// <summary>로드된 모든 행(시트 순서).</summary>");
             sb.AppendLine("        public IReadOnlyList<T> GetAll() => all;");
             sb.AppendLine();
-            sb.AppendLine("        /// <summary>로드·인덱싱 직후. <c>*Container</c> partial에서 override.</summary>");
-            sb.AppendLine("        protected virtual void OnLoaded() { }");
-            sb.AppendLine();
             sb.AppendLine("        internal void ReplaceFromLoader(IEnumerable<T> rows)");
             sb.AppendLine("        {");
             sb.AppendLine("            byId.Clear();");
@@ -225,8 +248,6 @@ namespace CSVParserTool
             sb.AppendLine("                    all.Add(r);");
             sb.AppendLine("                }");
             sb.AppendLine("            }");
-            sb.AppendLine();
-            sb.AppendLine("            OnLoaded();");
             sb.AppendLine("        }");
             sb.AppendLine("    }");
             sb.AppendLine("}");
@@ -300,7 +321,7 @@ namespace CSVParserTool
             sb.AppendLine("        /// <summary>Addressables 주소 접두사. 기본: <c>\"Content/CSV/\"</c> + <c>DT_Test.csv</c>.</summary>");
             sb.AppendLine("        public static string AddressableCsvKeyPrefix { get; set; } = \"Content/CSV/\";");
             sb.AppendLine();
-            sb.AppendLine("        /// <summary><see cref=\"LoadAllContainersAsync\"/> 시 한 배치에 동시 로드할 컨테이너 수. 메모리·Addressables 부담 완화.</summary>");
+            sb.AppendLine("        /// <summary>LoadAll 시 한 배치에 동시 로드할 컨테이너 수 (UniTask). 메모리·Addressables 부담 완화.</summary>");
             sb.AppendLine("        public static int LoadBatchSize { get; set; } = 8;");
             sb.AppendLine();
             sb.AppendLine("        private static readonly MessagePackSerializerOptions SheetOptions =");
@@ -331,6 +352,16 @@ namespace CSVParserTool
             sb.AppendLine("            return AddressableBytesKeyPrefix + stem + \".bytes\";");
             sb.AppendLine("        }");
             sb.AppendLine();
+            sb.AppendLine("        private static bool IsDataContainerProperty(Type propertyType)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            for (Type t = propertyType; t != null && t != typeof(object); t = t.BaseType)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(DataContainerBase<>))");
+            sb.AppendLine("                    return true;");
+            sb.AppendLine("            }");
+            sb.AppendLine("            return false;");
+            sb.AppendLine("        }");
+            sb.AppendLine();
             sb.AppendLine(IfUniTask);
             sb.AppendLine("        private static UniTask<T> AwaitHandle<T>(AsyncOperationHandle<T> handle)");
             sb.AppendLine("        {");
@@ -354,16 +385,6 @@ namespace CSVParserTool
             sb.AppendLine("                    utcs.TrySetException(new InvalidOperationException(\"Addressables load failed.\"));");
             sb.AppendLine("            };");
             sb.AppendLine("            return utcs.Task;");
-            sb.AppendLine("        }");
-            sb.AppendLine();
-            sb.AppendLine("        private static bool IsDataContainerProperty(Type propertyType)");
-            sb.AppendLine("        {");
-            sb.AppendLine("            for (Type t = propertyType; t != null && t != typeof(object); t = t.BaseType)");
-            sb.AppendLine("            {");
-            sb.AppendLine("                if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(DataContainerBase<>))");
-            sb.AppendLine("                    return true;");
-            sb.AppendLine("            }");
-            sb.AppendLine("            return false;");
             sb.AppendLine("        }");
             sb.AppendLine();
             sb.AppendLine("        /// <summary><see cref=\"GlobalDataContainer\"/>의 public <c>*Container</c> 프로퍼티를 찾아 <c>LoadAsync</c> 호출.</summary>");
@@ -465,6 +486,91 @@ namespace CSVParserTool
             sb.AppendLine("                return rows;");
             sb.AppendLine("            });");
             sb.AppendLine("        }");
+            sb.AppendLine(ElseNoUniTask);
+            sb.AppendLine("        private static T WaitForHandle<T>(AsyncOperationHandle<T> handle)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            if (!handle.IsDone)");
+            sb.AppendLine("                handle.WaitForCompletion();");
+            sb.AppendLine("            if (handle.Status == AsyncOperationStatus.Succeeded)");
+            sb.AppendLine("                return handle.Result;");
+            sb.AppendLine("            if (handle.OperationException != null)");
+            sb.AppendLine("                throw handle.OperationException;");
+            sb.AppendLine("            throw new InvalidOperationException(\"Addressables load failed.\");");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        /// <summary><see cref=\"GlobalDataContainer\"/>의 public <c>*Container</c> 프로퍼티를 찾아 <c>Load</c> 호출.</summary>");
+            sb.AppendLine("        public static void LoadAllContainers(GlobalDataContainer global)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            if (global == null)");
+            sb.AppendLine("                throw new ArgumentNullException(nameof(global));");
+            sb.AppendLine();
+            sb.AppendLine("            foreach (PropertyInfo prop in typeof(GlobalDataContainer).GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))");
+            sb.AppendLine("            {");
+            sb.AppendLine("                if (!prop.CanRead || !IsDataContainerProperty(prop.PropertyType))");
+            sb.AppendLine("                    continue;");
+            sb.AppendLine("                object container = prop.GetValue(global);");
+            sb.AppendLine("                if (container == null)");
+            sb.AppendLine("                    continue;");
+            sb.AppendLine("                MethodInfo load = prop.PropertyType.GetMethod(\"Load\", Type.EmptyTypes);");
+            sb.AppendLine("                if (load == null)");
+            sb.AppendLine("                    continue;");
+            sb.AppendLine("                load.Invoke(container, null);");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        public static void LoadAllContainers() => LoadAllContainers(GlobalDataContainer.Instance);");
+            sb.AppendLine();
+            sb.AppendLine("        public static void Load<T>(DataContainerBase<T> container)");
+            sb.AppendLine("            where T : class");
+            sb.AppendLine("        {");
+            sb.AppendLine("            string name = typeof(T).Name;");
+            sb.AppendLine("            if (!IsUseBytesFile())");
+            sb.AppendLine("            {");
+            sb.AppendLine("                string csvKey = CsvAddressKey(name);");
+            sb.AppendLine("                AsyncOperationHandle<TextAsset> csvHandle = Addressables.LoadAssetAsync<TextAsset>(csvKey);");
+            sb.AppendLine("                try");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    TextAsset csvTa = WaitForHandle(csvHandle);");
+            sb.AppendLine("                    if (csvTa == null || string.IsNullOrEmpty(csvTa.text))");
+            sb.AppendLine("                        throw new InvalidOperationException($\"CSV not found or empty: {csvKey} ({name})\");");
+            sb.AppendLine();
+            sb.AppendLine("                    List<T> csvList = ParseCsvText<T>(csvTa.text);");
+            sb.AppendLine("                    container.ReplaceFromLoader(csvList);");
+            sb.AppendLine("                    return;");
+            sb.AppendLine("                }");
+            sb.AppendLine("                finally");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    Addressables.Release(csvHandle);");
+            sb.AppendLine("                }");
+            sb.AppendLine("            }");
+            sb.AppendLine();
+            sb.AppendLine("            string byteKey = ByteAddressKey(name);");
+            sb.AppendLine("            AsyncOperationHandle<TextAsset> byteHandle = Addressables.LoadAssetAsync<TextAsset>(byteKey);");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                TextAsset byteTa = WaitForHandle(byteHandle);");
+            sb.AppendLine("                if (byteTa == null)");
+            sb.AppendLine("                    throw new InvalidOperationException(\"Addressables TextAsset not found: \" + byteKey);");
+            sb.AppendLine("                byte[] raw = byteTa.bytes;");
+            sb.AppendLine("                List<T> list = MessagePackSerializer.Deserialize<List<T>>(raw, SheetOptions);");
+            sb.AppendLine("                container.ReplaceFromLoader(list ?? new List<T>());");
+            sb.AppendLine("            }");
+            sb.AppendLine("            finally");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Addressables.Release(byteHandle);");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        private static List<T> ParseCsvText<T>(string text)");
+            sb.AppendLine("            where T : class");
+            sb.AppendLine("        {");
+            sb.AppendLine("            using var reader = new StringReader(text);");
+            sb.AppendLine("            using var csv = new CsvReader(reader, CultureInfo.InvariantCulture);");
+            sb.AppendLine("            var rows = new List<T>();");
+            sb.AppendLine("            foreach (T row in csv.GetRecords<T>())");
+            sb.AppendLine("                rows.Add(row);");
+            sb.AppendLine("            return rows;");
+            sb.AppendLine("        }");
             sb.AppendLine(EndIf);
             sb.AppendLine("    }");
             sb.AppendLine("}");
@@ -514,23 +620,188 @@ namespace CSVParserTool
         {
             var sb = new StringBuilder();
 
-            sb.AppendLine("// <auto-generated placeholder — export overwrites with full *Container.cs from CSV.>");
-            sb.AppendLine("// 가공 로직은 PlayerDataContainer.cs 등 별도 partial 파일에 작성하세요.");
+            sb.AppendLine("// <auto-generated>");
             sb.AppendLine(IfUniTask);
             sb.AppendLine("using Cysharp.Threading.Tasks;");
             sb.AppendLine(EndIf);
             sb.AppendLine();
             sb.AppendLine("namespace PJDev.Data");
             sb.AppendLine("{");
-            sb.AppendLine($"    public partial class {name}Container : DataContainerBase<{name}>");
+            sb.AppendLine($"    public sealed class {name}Container : DataContainerBase<{name}>");
             sb.AppendLine("    {");
             sb.AppendLine(IfUniTask);
             sb.AppendLine("        public UniTask LoadAsync() => DataSheetLoader.LoadAsync(this);");
+            sb.AppendLine(ElseNoUniTask);
+            sb.AppendLine("        public void Load() => DataSheetLoader.Load(this);");
             sb.AppendLine(EndIf);
             sb.AppendLine("    }");
             sb.AppendLine("}");
 
             return sb.ToString();
+        }
+
+        private static string BuildInfoStorageTypes()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("// <auto-generated>");
+            sb.AppendLine("using System;");
+            sb.AppendLine("using System.Collections.Generic;");
+            sb.AppendLine(IfUniTask);
+            sb.AppendLine("using Cysharp.Threading.Tasks;");
+            sb.AppendLine(EndIf);
+            sb.AppendLine();
+            sb.AppendLine("namespace PJDev.Data");
+            sb.AppendLine("{");
+            sb.AppendLine("    public interface IInfoStorage");
+            sb.AppendLine("    {");
+            sb.AppendLine(IfUniTask);
+            sb.AppendLine("        UniTask LoadAsync();");
+            sb.AppendLine(ElseNoUniTask);
+            sb.AppendLine("        void Load();");
+            sb.AppendLine(EndIf);
+            sb.AppendLine("    }");
+            sb.AppendLine();
+            sb.AppendLine("    public interface IInfoStorage<T> : IInfoStorage");
+            sb.AppendLine("        where T : class");
+            sb.AppendLine("    {");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// 시트 원본(<see cref=\"DataContainerBase{T}\"/>)을 Addressables로 로드한 뒤 가공합니다.");
+            sb.AppendLine("    /// Unity에서 <c>InfoStorageBase&lt;T&gt;</c>를 상속해 가공 로직을 작성하세요.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public abstract class InfoStorageBase<T> : IInfoStorage<T>");
+            sb.AppendLine("        where T : class");
+            sb.AppendLine("    {");
+            sb.AppendLine("        protected readonly DataContainerBase<T> dataSource;");
+            sb.AppendLine();
+            sb.AppendLine("        protected InfoStorageBase(DataContainerBase<T> dataSource)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            this.dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        protected DataContainerBase<T> DataSource => dataSource;");
+            sb.AppendLine();
+            sb.AppendLine("        protected IReadOnlyList<T> Rows { get; private set; } = Array.Empty<T>();");
+            sb.AppendLine();
+            sb.AppendLine(IfUniTask);
+            sb.AppendLine("        public async UniTask LoadAsync()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            await DataSheetLoader.LoadAsync(dataSource);");
+            sb.AppendLine("            Rows = dataSource.GetAll();");
+            sb.AppendLine("            await OnLoadedAsync();");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        protected abstract UniTask OnLoadedAsync();");
+            sb.AppendLine(ElseNoUniTask);
+            sb.AppendLine("        public void Load()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            DataSheetLoader.Load(dataSource);");
+            sb.AppendLine("            Rows = dataSource.GetAll();");
+            sb.AppendLine("            OnLoaded();");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        protected abstract void OnLoaded();");
+            sb.AppendLine(EndIf);
+            sb.AppendLine("    }");
+            sb.AppendLine();
+            sb.AppendLine("    public static class InfoStorageLoader");
+            sb.AppendLine("    {");
+            sb.AppendLine(IfUniTask);
+            sb.AppendLine("        public static UniTask LoadAsync(IInfoStorage storage)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            if (storage == null)");
+            sb.AppendLine("                throw new ArgumentNullException(nameof(storage));");
+            sb.AppendLine("            return storage.LoadAsync();");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        public static async UniTask LoadAllAsync(IEnumerable<IInfoStorage> storages)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            if (storages == null)");
+            sb.AppendLine("                return;");
+            sb.AppendLine();
+            sb.AppendLine("            var tasks = new List<UniTask>();");
+            sb.AppendLine("            foreach (IInfoStorage storage in storages)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                if (storage != null)");
+            sb.AppendLine("                    tasks.Add(storage.LoadAsync());");
+            sb.AppendLine("            }");
+            sb.AppendLine();
+            sb.AppendLine("            if (tasks.Count == 0)");
+            sb.AppendLine("                return;");
+            sb.AppendLine();
+            sb.AppendLine("            int batchSize = Math.Max(1, DataSheetLoader.LoadBatchSize);");
+            sb.AppendLine("            for (int offset = 0; offset < tasks.Count; offset += batchSize)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                int count = Math.Min(batchSize, tasks.Count - offset);");
+            sb.AppendLine("                if (count == 1)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    await tasks[offset];");
+            sb.AppendLine("                    continue;");
+            sb.AppendLine("                }");
+            sb.AppendLine();
+            sb.AppendLine("                var batch = new UniTask[count];");
+            sb.AppendLine("                for (int i = 0; i < count; i++)");
+            sb.AppendLine("                    batch[i] = tasks[offset + i];");
+            sb.AppendLine("                await UniTask.WhenAll(batch);");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine(ElseNoUniTask);
+            sb.AppendLine("        public static void Load(IInfoStorage storage)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            if (storage == null)");
+            sb.AppendLine("                throw new ArgumentNullException(nameof(storage));");
+            sb.AppendLine("            storage.Load();");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        public static void LoadAll(IEnumerable<IInfoStorage> storages)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            if (storages == null)");
+            sb.AppendLine("                return;");
+            sb.AppendLine();
+            sb.AppendLine("            foreach (IInfoStorage storage in storages)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                if (storage != null)");
+            sb.AppendLine("                    storage.Load();");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine(EndIf);
+            sb.AppendLine("    }");
+            sb.AppendLine();
+            sb.AppendLine("    /// <summary>다른 어셈블리에서 <see cref=\"IInfoStorage\"/>를 등록·일괄 로드합니다.</summary>");
+            sb.AppendLine("    public static class InfoStorageRegistry");
+            sb.AppendLine("    {");
+            sb.AppendLine("        private static readonly List<IInfoStorage> storages = new List<IInfoStorage>();");
+            sb.AppendLine();
+            sb.AppendLine("        public static IReadOnlyList<IInfoStorage> All => storages;");
+            sb.AppendLine();
+            sb.AppendLine("        public static void Register(IInfoStorage storage)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            if (storage == null)");
+            sb.AppendLine("                throw new ArgumentNullException(nameof(storage));");
+            sb.AppendLine("            storages.Add(storage);");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        public static void Clear() => storages.Clear();");
+            sb.AppendLine();
+            sb.AppendLine(IfUniTask);
+            sb.AppendLine("        public static UniTask LoadAllAsync() => InfoStorageLoader.LoadAllAsync(storages);");
+            sb.AppendLine(ElseNoUniTask);
+            sb.AppendLine("        public static void LoadAll() => InfoStorageLoader.LoadAll(storages);");
+            sb.AppendLine(EndIf);
+            sb.AppendLine("    }");
+            sb.AppendLine("}");
+            return sb.ToString();
+        }
+
+        private static void RemoveObsoleteGeneratedFile(string scriptsDir, string fileName, Action<string> log)
+        {
+            string path = Path.Combine(scriptsDir, fileName);
+            if (!File.Exists(path))
+                return;
+
+            File.Delete(path);
+            log?.Invoke($"Removed obsolete generated file: {path}");
         }
 
         private static string ToCamel(string name)

@@ -101,38 +101,99 @@ namespace CSVParserTool
             public readonly Dictionary<string, List<string>> Members = new(StringComparer.Ordinal);
         }
 
-        public static CsvTableParseResult Parse(string csvPath, string classNameOverride = null)
+        public static CsvTableParseResult Parse(string csvPath, string classNameOverride = null, CsvParseOptions options = null)
         {
             if (string.IsNullOrWhiteSpace(csvPath) || !File.Exists(csvPath))
                 throw new FileNotFoundException("CSV not found.", csvPath);
-
-            var lines = ReadAllLinesSafe(csvPath);
-            var tableLineIndexes = CollectTableLineIndexes(lines);
-            if (tableLineIndexes.Count < 2)
-                throw new InvalidOperationException("CSV must have header and at least one data row.");
 
             string rawName = string.IsNullOrWhiteSpace(classNameOverride)
                 ? Path.GetFileNameWithoutExtension(csvPath)
                 : classNameOverride;
 
             string className = CsvClassGenerator.DataRecordClassNameFromFileBaseName(rawName);
+            return ParseLines(ReadAllLinesSafe(csvPath), className, options);
+        }
+
+        public static CsvTableParseResult ParseLines(string[] lines, string className, CsvParseOptions options = null)
+        {
+            if (lines == null || lines.Length == 0)
+                throw new InvalidOperationException("CSV is empty.");
+
+            var tableLineIndexes = CollectTableLineIndexes(lines);
+            if (tableLineIndexes.Count < 1)
+                throw new InvalidOperationException("CSV must have a header row.");
 
             string[] rawHeader = SplitCsvLine(lines[tableLineIndexes[0]]);
-            bool[] keepMask = BuildExportColumnKeepMask(rawHeader);
-            var headers = FilterExportColumns(rawHeader, keepMask);
+            bool[] noteKeepMask = BuildExportColumnKeepMask(rawHeader);
+            string[] headers = FilterExportColumns(rawHeader, noteKeepMask);
             var enumAcc = new EnumAccumulator();
 
-            var columnTypes = new string[headers.Length];
-            var firstValues = FilterExportColumns(SplitCsvLine(lines[tableLineIndexes[1]]), keepMask);
-            for (int i = 0; i < headers.Length; i++)
-                columnTypes[i] = InferType(firstValues[i], headers[i], enumAcc);
-
-            for (int t = 1; t < tableLineIndexes.Count; t++)
+            if (tableLineIndexes.Count < 2)
             {
-                var values = FilterExportColumns(SplitCsvLine(lines[tableLineIndexes[t]]), keepMask);
+                throw new InvalidOperationException(
+                    "헤더 아래 2행에 버전 행이 필요합니다. (예: 1.0.0)");
+            }
+
+            if (tableLineIndexes.Count < 3)
+            {
+                throw new InvalidOperationException(
+                    "버전 행(2행) 다음 3행에 타입 행이 필요합니다.");
+            }
+
+            string[] rowAfterHeader = FilterExportColumns(SplitCsvLine(lines[tableLineIndexes[1]]), noteKeepMask);
+            if (!CsvColumnTypes.LooksLikeVersionRow(rowAfterHeader, headers))
+            {
+                if (CsvColumnTypes.LooksLikeTypeRow(rowAfterHeader, headers))
+                {
+                    throw new InvalidOperationException(
+                        "2행에 버전 행이 필요합니다. 타입은 3행에 지정하세요. (2행 예: 1.0.0 · 3행 예: int, float)");
+                }
+
+                throw new InvalidOperationException(
+                    "2행이 버전 행이 아닙니다. 각 Export 컬럼에 1.0.0 형식 버전을 지정하세요.");
+            }
+
+            string[] versionCells = rowAfterHeader;
+            string[] typeProbe = FilterExportColumns(SplitCsvLine(lines[tableLineIndexes[2]]), noteKeepMask);
+            EnsureCompleteTypeRow(typeProbe, headers);
+            if (!CsvColumnTypes.LooksLikeTypeRow(typeProbe, headers))
+            {
+                throw new InvalidOperationException(
+                    "3행이 타입 행이 아닙니다. 각 열에 bool, uint, int, float, double, string, enum 등을 지정하세요.");
+            }
+
+            const int typeLineTableIndex = 2;
+            const int firstDataTableIndex = 3;
+
+            string[] explicitTypeCells = FilterExportColumns(
+                SplitCsvLine(lines[tableLineIndexes[typeLineTableIndex]]),
+                noteKeepMask);
+
+            var columnTypes = new string[headers.Length];
+            for (int i = 0; i < headers.Length; i++)
+            {
+                string header = headers[i];
+                string typeCell = i < explicitTypeCells.Length ? explicitTypeCells[i] : string.Empty;
+                columnTypes[i] = ResolveExplicitColumnType(typeCell, header);
+            }
+
+            bool[] versionKeepMask = BuildVersionColumnKeepMask(headers, versionCells, options?.ExportVersion);
+            headers = FilterColumnsByMask(headers, versionKeepMask);
+            columnTypes = FilterColumnsByMask(columnTypes, versionKeepMask);
+
+            if (headers.Length == 0)
+                throw new InvalidOperationException("Export 버전에 포함되는 컬럼이 없습니다. Id 열과 버전을 확인하세요.");
+
+            if (FindIdColumnIndex(headers) < 0)
+                throw new InvalidOperationException("Export 결과에 Id 컬럼이 필요합니다.");
+
+            for (int t = firstDataTableIndex; t < tableLineIndexes.Count; t++)
+            {
+                string[] values = FilterExportColumns(SplitCsvLine(lines[tableLineIndexes[t]]), noteKeepMask);
+                values = FilterColumnsByMask(values, versionKeepMask);
                 for (int i = 0; i < headers.Length; i++)
                 {
-                    if (headers[i].StartsWith("E", StringComparison.Ordinal))
+                    if (CsvColumnTypes.IsEnumHeader(headers[i]))
                     {
                         string cell = i < values.Length ? values[i] : string.Empty;
                         RegisterEnum(enumAcc, headers[i], cell);
@@ -141,8 +202,11 @@ namespace CSVParserTool
             }
 
             var dataRows = new List<string[]>();
-            for (int t = 1; t < tableLineIndexes.Count; t++)
-                dataRows.Add(FilterExportColumns(SplitCsvLine(lines[tableLineIndexes[t]]), keepMask));
+            for (int t = firstDataTableIndex; t < tableLineIndexes.Count; t++)
+            {
+                string[] row = FilterExportColumns(SplitCsvLine(lines[tableLineIndexes[t]]), noteKeepMask);
+                dataRows.Add(FilterColumnsByMask(row, versionKeepMask));
+            }
 
             var enumRead = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
             foreach (var kv in enumAcc.Members)
@@ -155,6 +219,153 @@ namespace CSVParserTool
                 enumAcc.DeclarationOrder,
                 enumRead,
                 dataRows);
+        }
+
+        /// <summary>배포용 CSV — 헤더·데이터 행만 (버전·타입 행·# 열 제외, Export 버전 필터 반영).</summary>
+        public static void WriteDeployedCsv(string csvPath, CsvTableParseResult table)
+        {
+            if (string.IsNullOrWhiteSpace(csvPath))
+                throw new ArgumentException("CSV path is empty.", nameof(csvPath));
+            if (table == null)
+                throw new ArgumentNullException(nameof(table));
+
+            var sb = new StringBuilder();
+            AppendCsvRow(sb, table.Headers);
+            foreach (string[] row in table.DataRows)
+                AppendCsvRow(sb, row);
+
+            string dir = Path.GetDirectoryName(csvPath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+
+            File.WriteAllText(csvPath, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        }
+
+        private static void AppendCsvRow(StringBuilder sb, string[] cells)
+        {
+            for (int i = 0; i < cells.Length; i++)
+            {
+                if (i > 0)
+                    sb.Append(',');
+                sb.Append(EscapeCsvField(cells[i] ?? string.Empty));
+            }
+
+            sb.AppendLine();
+        }
+
+        private static string EscapeCsvField(string s)
+        {
+            if (string.IsNullOrEmpty(s))
+                return s;
+
+            if (s.IndexOfAny(new[] { ',', '"', '\r', '\n' }) < 0)
+                return s;
+
+            return "\"" + s.Replace("\"", "\"\"") + "\"";
+        }
+
+        private static bool[] BuildVersionColumnKeepMask(
+            string[] headers,
+            string[] versionCells,
+            string exportVersion)
+        {
+            var mask = new bool[headers.Length];
+            if (versionCells == null || versionCells.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    "버전 행이 없습니다. 2행에 각 Export 컬럼 버전(예: 1.0.0)을 지정하세요.");
+            }
+
+            if (string.IsNullOrWhiteSpace(exportVersion))
+            {
+                throw new InvalidOperationException(
+                    "버전 행이 있는 테이블은 Export 버전이 필요합니다. (예: 1.0.0)");
+            }
+
+            if (!DataVersion.TryParse(exportVersion.Trim(), out DataVersion target))
+            {
+                throw new InvalidOperationException(
+                    $"Export 버전 '{exportVersion.Trim()}' 형식이 올바르지 않습니다. (예: 1.0.0)");
+            }
+
+            for (int i = 0; i < headers.Length; i++)
+            {
+                if (string.Equals(headers[i]?.Trim(), "Id", StringComparison.OrdinalIgnoreCase))
+                {
+                    mask[i] = true;
+                    continue;
+                }
+
+                string versionCell = i < versionCells.Length ? versionCells[i]?.Trim() ?? string.Empty : string.Empty;
+                if (string.IsNullOrEmpty(versionCell))
+                {
+                    mask[i] = true;
+                    continue;
+                }
+
+                if (!DataVersion.TryParse(versionCell, out DataVersion columnVersion))
+                {
+                    throw new InvalidOperationException(
+                        $"열 '{headers[i]}': 버전 '{versionCell}' 형식이 올바르지 않습니다. (예: 1.0.0)");
+                }
+
+                mask[i] = columnVersion <= target;
+            }
+
+            return mask;
+        }
+
+        private static string[] FilterColumnsByMask(string[] cells, bool[] keepMask)
+        {
+            if (cells == null || keepMask == null || keepMask.Length == 0)
+                return Array.Empty<string>();
+
+            var result = new List<string>();
+            int count = Math.Min(cells.Length, keepMask.Length);
+            for (int i = 0; i < count; i++)
+            {
+                if (keepMask[i])
+                    result.Add(cells[i] ?? string.Empty);
+            }
+
+            return result.ToArray();
+        }
+
+        private static void EnsureCompleteTypeRow(string[] typeCells, string[] headers)
+        {
+            for (int i = 0; i < headers.Length; i++)
+            {
+                string cell = i < typeCells.Length ? typeCells[i]?.Trim() ?? string.Empty : string.Empty;
+                if (string.IsNullOrEmpty(cell))
+                {
+                    throw new InvalidOperationException(
+                        $"3행 타입이 비어 있습니다. 열 '{headers[i]}'에 bool, int, float, string 등 타입을 지정하세요.");
+                }
+            }
+        }
+
+        private static string ResolveExplicitColumnType(string explicitTypeCell, string header)
+        {
+            if (string.IsNullOrWhiteSpace(explicitTypeCell))
+            {
+                throw new InvalidOperationException(
+                    $"열 '{header}': 타입이 비어 있습니다. 3행에 타입을 지정하세요.");
+            }
+
+            if (explicitTypeCell.Trim().StartsWith("List<", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"열 '{header}': List 타입은 지원하지 않습니다.");
+            }
+
+            if (!CsvColumnTypes.TryNormalizeExplicit(explicitTypeCell.Trim(), header, out string explicitType))
+            {
+                throw new InvalidOperationException(
+                    $"열 '{header}': 인식할 수 없는 타입 '{explicitTypeCell.Trim()}'. " +
+                    "bool, uint, int, float, double, string, enum(또는 E접두 enum명)만 사용할 수 있습니다.");
+            }
+
+            return explicitType;
         }
 
         public static string SanitizeIdentifier(string s)
@@ -172,17 +383,8 @@ namespace CSVParserTool
             return sb.ToString();
         }
 
-        internal static string InferPrimitiveType(string value)
-        {
-            value = value.Trim();
-            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
-                return "int";
-            if (float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _))
-                return "float";
-            if (bool.TryParse(value, out _))
-                return "bool";
-            return "string";
-        }
+        internal static string InferPrimitiveType(string value) =>
+            CsvColumnTypes.InferPrimitiveFromValue(value);
 
         private static List<int> CollectTableLineIndexes(string[] lines)
         {
@@ -240,18 +442,12 @@ namespace CSVParserTool
 
         private static string InferType(string value, string fieldName, EnumAccumulator acc)
         {
-            value = value.Trim();
+            value = value?.Trim() ?? string.Empty;
 
             if (value.StartsWith("\"", StringComparison.Ordinal))
                 return "string";
 
-            if (value.IndexOf('|') >= 0)
-            {
-                string first = value.Split('|')[0];
-                return $"List<{InferPrimitiveType(first)}>";
-            }
-
-            if (fieldName.StartsWith("E", StringComparison.Ordinal))
+            if (CsvColumnTypes.IsEnumHeader(fieldName))
             {
                 RegisterEnum(acc, fieldName, value);
                 return fieldName;
