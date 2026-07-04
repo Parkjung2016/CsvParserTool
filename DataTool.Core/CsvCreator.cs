@@ -28,7 +28,6 @@ public static class CsvCreator
 
         var sb = new StringBuilder();
         sb.AppendLine("Id,Name,Value");
-        sb.AppendLine("0,\"\"\"Sample\"\"\",0");
 
         File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
 

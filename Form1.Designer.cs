@@ -68,6 +68,7 @@ namespace CSVParserTool
             this.Label_ExportStatus = new System.Windows.Forms.Label();
             this.Label_SectionExport = new System.Windows.Forms.Label();
             this.Panel_LogHeader = new System.Windows.Forms.Panel();
+            this.Btn_ClearLog = new System.Windows.Forms.Button();
             this.Combo_LogFilter = new System.Windows.Forms.ComboBox();
             this.Label_SectionLog = new System.Windows.Forms.Label();
             this.Panel_LogCard = new System.Windows.Forms.Panel();
@@ -717,12 +718,27 @@ namespace CSVParserTool
             // 
             this.Panel_LogHeader.Controls.Add(this.Combo_LogFilter);
             this.Panel_LogHeader.Controls.Add(this.Label_SectionLog);
+            this.Panel_LogHeader.Controls.Add(this.Btn_ClearLog);
             this.Panel_LogHeader.Dock = System.Windows.Forms.DockStyle.Top;
             this.Panel_LogHeader.Location = new System.Drawing.Point(0, 0);
             this.Panel_LogHeader.Name = "Panel_LogHeader";
             this.Panel_LogHeader.Padding = new System.Windows.Forms.Padding(0, 0, 0, 6);
             this.Panel_LogHeader.Size = new System.Drawing.Size(1116, 32);
             this.Panel_LogHeader.TabIndex = 1;
+            // 
+            // Btn_ClearLog
+            // 
+            this.Btn_ClearLog.AutoSize = true;
+            this.Btn_ClearLog.Dock = System.Windows.Forms.DockStyle.Right;
+            this.Btn_ClearLog.Location = new System.Drawing.Point(1032, 0);
+            this.Btn_ClearLog.Margin = new System.Windows.Forms.Padding(0);
+            this.Btn_ClearLog.Name = "Btn_ClearLog";
+            this.Btn_ClearLog.Padding = new System.Windows.Forms.Padding(6, 2, 6, 2);
+            this.Btn_ClearLog.Size = new System.Drawing.Size(84, 26);
+            this.Btn_ClearLog.TabIndex = 3;
+            this.Btn_ClearLog.Text = "전체 지우기";
+            this.Btn_ClearLog.UseCompatibleTextRendering = true;
+            this.Btn_ClearLog.Click += new System.EventHandler(this.Btn_ClearLog_Click);
             // 
             // Combo_LogFilter
             // 
@@ -870,6 +886,7 @@ namespace CSVParserTool
         private Button Btn_OpenCsvFolder;
         private Button Btn_NewCsv;
         private Button Btn_RefreshList;
+        private Button Btn_ClearLog;
 
         private Label Label_ProjectRoot;
         private Label Label_ExcelSourcePath;

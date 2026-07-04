@@ -204,6 +204,7 @@ namespace CSVParserTool
             UiTheme.StyleSecondaryButton(Btn_OpenXlsxFolder);
             UiTheme.StyleSecondaryButton(Btn_NewCsv);
             UiTheme.StyleSecondaryButton(Btn_RefreshList);
+            UiTheme.StyleSecondaryButton(Btn_ClearLog);
 
             UiTheme.StylePathLabel(Label_ProjectRoot);
             UiTheme.StylePathLabel(Label_ExcelSourcePath);
@@ -1069,6 +1070,12 @@ namespace CSVParserTool
                 default: currentFilter = null; break;
             }
 
+            RefreshLogDisplay();
+        }
+
+        private void Btn_ClearLog_Click(object sender, EventArgs e)
+        {
+            allLogs.Clear();
             RefreshLogDisplay();
         }
 

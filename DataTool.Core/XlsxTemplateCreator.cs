@@ -35,7 +35,6 @@ namespace CSVParserTool
             {
                 var ws = wb.Worksheets.Add(sheetName);
                 WriteSchema(ws);
-                WriteSampleData(ws);
                 IXLTable table = CreateSheetTable(ws);
                 ApplyLayout(ws);
                 ApplySchemaStyles(ws);
@@ -69,13 +68,6 @@ namespace CSVParserTool
             ws.Cell(TypeRow, LastCol).Value = "int";
         }
 
-        private static void WriteSampleData(IXLWorksheet ws)
-        {
-            ws.Cell(FirstDataRow, NoteCol).Value = "플레이어";
-            ws.Cell(FirstDataRow, FirstExportCol).Value = 0;
-            ws.Cell(FirstDataRow, FirstExportCol + 1).Value = "Sample";
-            ws.Cell(FirstDataRow, LastCol).Value = 0;
-        }
 
         private static void ApplyLayout(IXLWorksheet ws)
         {
