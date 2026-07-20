@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using ClosedXML.Excel;
 
 namespace CSVParserTool
 {
@@ -50,73 +49,62 @@ namespace CSVParserTool
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
                 throw new FileNotFoundException("Enum 관리 XLSX를 찾을 수 없습니다.", path);
 
-            using (var stream = new FileStream(
-                path,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete))
-            using (var workbook = new XLWorkbook(stream))
+            List<List<string>> rows = XlsxPreviewReader.ReadFirstWorksheetRows(path, int.MaxValue);
+            int headerIndex = rows.FindIndex(row => row.Any(cell => !string.IsNullOrWhiteSpace(cell)));
+            if (headerIndex < 0)
+                throw new InvalidOperationException("Enum 관리 XLSX가 비어 있습니다.");
+
+            List<string> headerRow = rows[headerIndex];
+            int enumColumn = FindColumn(headerRow, "enumname", "enum", "enum이름");
+            int valueColumn = FindColumn(headerRow, "value", "값", "enumvalue");
+            if (enumColumn < 0 || valueColumn < 0)
             {
-                IXLWorksheet sheet = workbook.Worksheets.FirstOrDefault();
-                if (sheet == null)
-                    throw new InvalidOperationException("Enum 관리 XLSX에 워크시트가 없습니다.");
+                throw new InvalidOperationException(
+                    "Enum 관리 XLSX의 첫 행에 EnumName과 Value 컬럼이 필요합니다.");
+            }
 
-                IXLRow headerRow = sheet.RowsUsed().FirstOrDefault();
-                if (headerRow == null)
-                    throw new InvalidOperationException("Enum 관리 XLSX가 비어 있습니다.");
-
-                int enumColumn = FindColumn(headerRow, "enumname", "enum", "enum이름");
-                int valueColumn = FindColumn(headerRow, "value", "값", "enumvalue");
-                if (enumColumn < 0 || valueColumn < 0)
+            var order = new List<string>();
+            var values = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            for (int rowIndex = headerIndex + 1; rowIndex < rows.Count; rowIndex++)
+            {
+                int rowNumber = rowIndex + 1;
+                string enumName = Cell(rows[rowIndex], enumColumn).Trim();
+                string value = Cell(rows[rowIndex], valueColumn).Trim();
+                if (string.IsNullOrEmpty(enumName) && string.IsNullOrEmpty(value))
+                    continue;
+                if (string.IsNullOrEmpty(enumName) || string.IsNullOrEmpty(value))
                 {
                     throw new InvalidOperationException(
-                        "Enum 관리 XLSX의 첫 행에 EnumName과 Value 컬럼이 필요합니다.");
+                        $"Enum 관리 XLSX {rowNumber}행: EnumName과 Value를 모두 입력하세요.");
                 }
+                if (!CsvColumnTypes.IsValidTypeIdentifier(enumName))
+                    throw new InvalidOperationException(
+                        $"Enum 관리 XLSX {rowNumber}행: EnumName '{enumName}'은 C# 타입 이름으로 사용할 수 없습니다.");
+                if (!CsvColumnTypes.IsValidTypeIdentifier(value))
+                    throw new InvalidOperationException(
+                        $"Enum 관리 XLSX {rowNumber}행: Value '{value}'은 C# enum 값 이름으로 사용할 수 없습니다.");
 
-                var order = new List<string>();
-                var values = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-                int lastRow = sheet.LastRowUsed()?.RowNumber() ?? headerRow.RowNumber();
-                for (int rowNumber = headerRow.RowNumber() + 1; rowNumber <= lastRow; rowNumber++)
+                if (!values.TryGetValue(enumName, out List<string> enumValues))
                 {
-                    string enumName = sheet.Cell(rowNumber, enumColumn).GetString().Trim();
-                    string value = sheet.Cell(rowNumber, valueColumn).GetString().Trim();
-                    if (string.IsNullOrEmpty(enumName) && string.IsNullOrEmpty(value))
-                        continue;
-                    if (string.IsNullOrEmpty(enumName) || string.IsNullOrEmpty(value))
-                    {
-                        throw new InvalidOperationException(
-                            $"Enum 관리 XLSX {rowNumber}행: EnumName과 Value를 모두 입력하세요.");
-                    }
-                    if (!CsvColumnTypes.IsValidTypeIdentifier(enumName))
-                        throw new InvalidOperationException(
-                            $"Enum 관리 XLSX {rowNumber}행: EnumName '{enumName}'은 C# 타입 이름으로 사용할 수 없습니다.");
-                    if (!CsvColumnTypes.IsValidTypeIdentifier(value))
-                        throw new InvalidOperationException(
-                            $"Enum 관리 XLSX {rowNumber}행: Value '{value}'은 C# enum 값 이름으로 사용할 수 없습니다.");
-
-                    if (!values.TryGetValue(enumName, out List<string> enumValues))
-                    {
-                        enumValues = new List<string>();
-                        values.Add(enumName, enumValues);
-                        order.Add(enumName);
-                    }
-
-                    if (enumValues.Any(existing => string.Equals(existing, value, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        throw new InvalidOperationException(
-                            $"Enum 관리 XLSX {rowNumber}행: {enumName}.{value} 값이 중복됩니다.");
-                    }
-
-                    enumValues.Add(value);
+                    enumValues = new List<string>();
+                    values.Add(enumName, enumValues);
+                    order.Add(enumName);
                 }
 
-                var readOnly = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-                foreach (var pair in values)
-                    readOnly[pair.Key] = pair.Value;
-                return new EnumCatalog(order, readOnly);
-            }
-        }
+                if (enumValues.Any(existing => string.Equals(existing, value, StringComparison.OrdinalIgnoreCase)))
+                {
+                    throw new InvalidOperationException(
+                        $"Enum 관리 XLSX {rowNumber}행: {enumName}.{value} 값이 중복됩니다.");
+                }
 
+                enumValues.Add(value);
+            }
+
+            var readOnly = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in values)
+                readOnly[pair.Key] = pair.Value;
+            return new EnumCatalog(order, readOnly);
+        }
         public static string GenerateSource(EnumCatalog catalog)
         {
             if (catalog == null)
@@ -224,17 +212,19 @@ namespace CSVParserTool
                 $"{table.ClassName}[Id={id}].{table.Headers[column]}: '{value}'은(는) {enumName}에 등록되지 않은 값입니다.");
         }
 
-        private static int FindColumn(IXLRow headerRow, params string[] aliases)
+        private static int FindColumn(IReadOnlyList<string> headerRow, params string[] aliases)
         {
-            foreach (IXLCell cell in headerRow.CellsUsed())
+            for (int column = 0; column < headerRow.Count; column++)
             {
-                string normalized = NormalizeHeader(cell.GetString());
+                string normalized = NormalizeHeader(headerRow[column]);
                 if (aliases.Any(alias => string.Equals(normalized, alias, StringComparison.OrdinalIgnoreCase)))
-                    return cell.Address.ColumnNumber;
+                    return column;
             }
             return -1;
         }
 
+        private static string Cell(IReadOnlyList<string> row, int column) =>
+            row != null && column >= 0 && column < row.Count ? row[column] ?? string.Empty : string.Empty;
         private static string NormalizeHeader(string value) =>
             (value ?? string.Empty)
                 .Replace(" ", string.Empty)

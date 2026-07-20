@@ -17,6 +17,12 @@ namespace CSVParserTool
 
         public static string ReadFirstWorksheetAsCsv(string xlsxPath, int maxRows)
         {
+            List<List<string>> rows = ReadFirstWorksheetRows(xlsxPath, maxRows);
+            return BuildCsv(rows);
+        }
+
+        internal static List<List<string>> ReadFirstWorksheetRows(string xlsxPath, int maxRows)
+        {
             if (string.IsNullOrWhiteSpace(xlsxPath) || !File.Exists(xlsxPath))
                 throw new FileNotFoundException("XLSX not found.", xlsxPath);
             if (maxRows <= 0)
@@ -36,8 +42,7 @@ namespace CSVParserTool
                 string worksheetPath = ResolveWorksheetPath(archive, relationshipId);
                 ZipArchiveEntry worksheet = FindEntry(archive, worksheetPath)
                     ?? throw new InvalidDataException("XLSX first worksheet XML was not found.");
-                List<List<string>> rows = ReadRows(worksheet, sharedStrings, maxRows);
-                return BuildCsv(rows);
+                return ReadRows(worksheet, sharedStrings, maxRows);
             }
         }
 
