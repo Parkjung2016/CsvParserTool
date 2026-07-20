@@ -200,8 +200,18 @@ namespace CSVParserTool
                 }
 
                 ExtractSecurely(zipPath, payloadPath);
-                if (!File.Exists(Path.Combine(payloadPath, Path.GetFileName(Application.ExecutablePath))))
+                string payloadExe = Path.Combine(payloadPath, Path.GetFileName(Application.ExecutablePath));
+                if (!File.Exists(payloadExe))
                     throw new InvalidDataException("업데이트 ZIP에 DataToolGUI.exe가 없습니다.");
+
+                Version payloadVersion = ToolVersionInfo.ParseVersion(
+                    AssemblyName.GetAssemblyName(payloadExe).Version.ToString());
+                if (payloadVersion == null || payloadVersion != update.Version)
+                {
+                    throw new InvalidDataException(
+                        $"업데이트 ZIP의 실행 파일 버전이 올바르지 않습니다. 요청: v{update.VersionText}, 파일: v{ToolVersionInfo.Format(payloadVersion)}");
+                }
+
                 progress?.Report(100);
                 return payloadPath;
             }
@@ -212,15 +222,17 @@ namespace CSVParserTool
             }
         }
 
-        public static void StartInstaller(string payloadPath)
+        public static void StartInstaller(string payloadPath, string expectedVersion)
         {
-            string sourceExe = Application.ExecutablePath;
-            string updaterExe = Path.Combine(Path.GetDirectoryName(payloadPath), "PJDevDataToolUpdater.exe");
-            File.Copy(sourceExe, updaterExe, true);
+            string sourceExe = Path.GetFullPath(Application.ExecutablePath);
+            string executableName = Path.GetFileName(sourceExe);
+            string downloadedExe = Path.Combine(payloadPath, executableName);
+            if (!File.Exists(downloadedExe))
+                throw new FileNotFoundException("다운로드한 업데이트 실행 파일을 찾을 수 없습니다.", downloadedExe);
 
-            string config = sourceExe + ".config";
-            if (File.Exists(config))
-                File.Copy(config, updaterExe + ".config", true);
+            // 새 버전의 업데이터 로직으로 교체해야 이전 버전의 업데이트 버그도 함께 수정된다.
+            string updaterExe = Path.Combine(Path.GetDirectoryName(payloadPath), "PJDevDataToolUpdater.exe");
+            File.Copy(downloadedExe, updaterExe, true);
 
             var start = new ProcessStartInfo
             {
@@ -232,8 +244,9 @@ namespace CSVParserTool
                     "--apply-update",
                     Process.GetCurrentProcess().Id.ToString(),
                     Quote(payloadPath),
-                    Quote(AppDomain.CurrentDomain.BaseDirectory),
-                    Quote(Path.GetFileName(sourceExe))
+                    Quote(Path.GetDirectoryName(sourceExe)),
+                    Quote(executableName),
+                    Quote(expectedVersion)
                 })
             };
             Process.Start(start);
@@ -241,27 +254,44 @@ namespace CSVParserTool
 
         public static bool TryRunInstallerMode(string[] args)
         {
-            if (args == null || args.Length < 5 || !string.Equals(args[0], "--apply-update", StringComparison.OrdinalIgnoreCase))
+            if (args == null || args.Length < 6 || !string.Equals(args[0], "--apply-update", StringComparison.OrdinalIgnoreCase))
                 return false;
 
             try
             {
                 if (int.TryParse(args[1], out int processId))
                 {
-                    try { Process.GetProcessById(processId).WaitForExit(30000); }
+                    try
+                    {
+                        using (Process runningTool = Process.GetProcessById(processId))
+                        {
+                            if (!runningTool.WaitForExit(60000))
+                                throw new IOException("기존 Data Tool이 종료되지 않아 업데이트를 적용할 수 없습니다.");
+                        }
+                    }
                     catch (ArgumentException) { }
                 }
 
                 string payloadPath = Path.GetFullPath(args[2]);
                 string installPath = Path.GetFullPath(args[3]);
                 string executableName = Path.GetFileName(args[4]);
-                if (!Directory.Exists(payloadPath) || string.IsNullOrWhiteSpace(executableName))
-                    throw new InvalidDataException("업데이트 파일 위치가 올바르지 않습니다.");
+                Version expectedVersion = ToolVersionInfo.ParseVersion(args[5]);
+                if (!Directory.Exists(payloadPath) || string.IsNullOrWhiteSpace(executableName) || expectedVersion == null)
+                    throw new InvalidDataException("업데이트 파일 위치 또는 버전이 올바르지 않습니다.");
 
-                CopyDirectory(payloadPath, installPath);
+                CopyDirectoryWithRetry(payloadPath, installPath);
+                string installedExe = Path.Combine(installPath, executableName);
+                Version installedVersion = ToolVersionInfo.ParseVersion(
+                    AssemblyName.GetAssemblyName(installedExe).Version.ToString());
+                if (installedVersion == null || installedVersion != expectedVersion)
+                {
+                    throw new InvalidDataException(
+                        $"업데이트 적용 후 버전 검증에 실패했습니다. 예상: v{ToolVersionInfo.Format(expectedVersion)}, 설치: v{ToolVersionInfo.Format(installedVersion)}");
+                }
+
                 Process.Start(new ProcessStartInfo
                 {
-                    FileName = Path.Combine(installPath, executableName),
+                    FileName = installedExe,
                     WorkingDirectory = installPath,
                     UseShellExecute = true
                 });
@@ -307,6 +337,32 @@ namespace CSVParserTool
             }
         }
 
+        private static void CopyDirectoryWithRetry(string source, string destination)
+        {
+            Exception lastError = null;
+            for (int attempt = 1; attempt <= 20; attempt++)
+            {
+                try
+                {
+                    CopyDirectory(source, destination);
+                    return;
+                }
+                catch (IOException ex)
+                {
+                    lastError = ex;
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    lastError = ex;
+                }
+
+                Thread.Sleep(500);
+            }
+
+            throw new IOException(
+                "업데이트 파일을 설치 폴더에 복사하지 못했습니다. 실행 중인 Data Tool을 모두 닫고 다시 시도하세요.",
+                lastError);
+        }
         private static void CopyDirectory(string source, string destination)
         {
             string sourceRoot = Path.GetFullPath(source).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;

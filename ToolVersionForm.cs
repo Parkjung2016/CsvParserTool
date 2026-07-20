@@ -244,9 +244,10 @@ namespace CSVParserTool
                     statusLabel.Text = $"업데이트를 다운로드하고 있습니다… {value}%";
                 });
                 string payload = await ToolUpdateService.DownloadAsync(availableUpdate, progress, CancellationToken.None);
-                statusLabel.Text = "다운로드 완료. 툴을 다시 시작합니다…";
-                ToolUpdateService.StartInstaller(payload);
-                Application.Exit();
+                statusLabel.Text = "다운로드 완료. 설정을 저장하고 툴을 다시 시작합니다…";
+                ToolSettingsStore.Save();
+                ToolUpdateService.StartInstaller(payload, availableUpdate.VersionText);
+                Environment.Exit(0);
             }
             catch (Exception ex)
             {
