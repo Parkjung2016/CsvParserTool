@@ -215,7 +215,7 @@ namespace CSVParserTool
             {
                 if (Icon != null)
                     dialog.Icon = (Icon)Icon.Clone();
-                dialog.ShowDialog(this);
+                ModalBlurBackdrop.ShowDialog(this, dialog);
             }
         }
 
@@ -225,7 +225,7 @@ namespace CSVParserTool
             {
                 if (Icon != null)
                     dialog.Icon = (Icon)Icon.Clone();
-                dialog.ShowDialog(this);
+                ModalBlurBackdrop.ShowDialog(this, dialog);
             }
         }
 

@@ -16,6 +16,8 @@ namespace CSVParserTool
             if (ToolUpdateService.TryRunInstallerMode(args))
                 return;
 
+            UserSettingsMigration.UpgradeFromPreviousVersionIfNeeded();
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new Form1());
