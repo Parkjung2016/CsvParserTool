@@ -88,7 +88,7 @@ namespace CSVParserTool
             InitializeComponent();
             InitializeInfoButton();
 
-            bool darkMode = Properties.Settings.Default.DarkMode;
+            bool darkMode = ToolSettingsStore.DarkMode;
             UiTheme.SetDarkMode(darkMode);
             Chk_DarkMode.Checked = darkMode;
 
@@ -303,8 +303,8 @@ namespace CSVParserTool
         {
             bool darkMode = Chk_DarkMode.Checked;
             UiTheme.SetDarkMode(darkMode);
-            Properties.Settings.Default.DarkMode = darkMode;
-            Properties.Settings.Default.Save();
+            ToolSettingsStore.DarkMode = darkMode;
+            ToolSettingsStore.Save();
 
             ApplyUiTheme();
             SetPreviewCode(currentPreviewCode);
@@ -684,14 +684,14 @@ namespace CSVParserTool
 
         private void Form1_Load(object sender, EventArgs e)
         {
-            projectRootPath = Properties.Settings.Default.ProjectRootPath ?? "";
-            excelSourceFolderPath = Properties.Settings.Default.ExcelSourceFolderPath ?? "";
-            exportVersion = NormalizeExportVersion(Properties.Settings.Default.ExportVersion);
+            projectRootPath = ToolSettingsStore.ProjectRootPath ?? "";
+            excelSourceFolderPath = ToolSettingsStore.ExcelSourceFolderPath ?? "";
+            exportVersion = NormalizeExportVersion(ToolSettingsStore.ExportVersion);
 
             UiTheme.UpdatePathLabel(Label_ProjectRoot, projectRootPath);
             UiTheme.UpdatePathLabel(Label_ExcelSourcePath, excelSourceFolderPath);
             Txt_ExportVersion.Text = exportVersion;
-            Chk_RemoveOrphanArtifacts.Checked = Properties.Settings.Default.RemoveOrphanArtifactsOnExport;
+            Chk_RemoveOrphanArtifacts.Checked = ToolSettingsStore.RemoveOrphanArtifactsOnExport;
 
             ReloadDataFileList();
 
@@ -1696,8 +1696,8 @@ namespace CSVParserTool
                 {
                     projectRootPath = cfd.FileName;
 
-                    Properties.Settings.Default.ProjectRootPath = projectRootPath;
-                    Properties.Settings.Default.Save();
+                    ToolSettingsStore.ProjectRootPath = projectRootPath;
+                    ToolSettingsStore.Save();
 
                     UiTheme.UpdatePathLabel(Label_ProjectRoot, projectRootPath);
 
@@ -1723,8 +1723,8 @@ namespace CSVParserTool
                     excelSourceFolderPath = cfd.FileName;
                     UiTheme.UpdatePathLabel(Label_ExcelSourcePath, excelSourceFolderPath);
 
-                    Properties.Settings.Default.ExcelSourceFolderPath = excelSourceFolderPath;
-                    Properties.Settings.Default.Save();
+                    ToolSettingsStore.ExcelSourceFolderPath = excelSourceFolderPath;
+                    ToolSettingsStore.Save();
 
                     AddLog($"XLSX 원본 폴더: {excelSourceFolderPath}", LogLevel.Info);
                     ReloadDataFileList();
@@ -1937,8 +1937,8 @@ namespace CSVParserTool
 
         private void Chk_RemoveOrphanArtifacts_CheckedChanged(object sender, EventArgs e)
         {
-            Properties.Settings.Default.RemoveOrphanArtifactsOnExport = Chk_RemoveOrphanArtifacts.Checked;
-            Properties.Settings.Default.Save();
+            ToolSettingsStore.RemoveOrphanArtifactsOnExport = Chk_RemoveOrphanArtifacts.Checked;
+            ToolSettingsStore.Save();
         }
 
         private void Txt_ExportVersion_TextChanged(object sender, EventArgs e)
@@ -1953,8 +1953,8 @@ namespace CSVParserTool
         {
             exportVersion = NormalizeExportVersion(Txt_ExportVersion.Text);
             Txt_ExportVersion.Text = exportVersion;
-            Properties.Settings.Default.ExportVersion = exportVersion;
-            Properties.Settings.Default.Save();
+            ToolSettingsStore.ExportVersion = exportVersion;
+            ToolSettingsStore.Save();
         }
 
         private static string NormalizeExportVersion(string raw)

@@ -7,12 +7,13 @@ using System.Xml;
 
 namespace CSVParserTool
 {
-    /// <summary>EXE 해시와 버전에 영향받지 않는 사용자 설정 저장소를 관리한다.</summary>
-    internal static class UserSettingsMigration
+    /// <summary>실행 파일 옆의 고정 XML에서 사용자 설정을 직접 읽고 저장한다.</summary>
+    internal static class ToolSettingsStore
     {
-        private const string SettingsFolderName = "DataTool";
-        private const string SettingsFileName = "settings.xml";
-        private static bool initialized;
+        private const string SettingsFileName = "DataTool.settings.xml";
+        private static readonly object Sync = new object();
+        private static Snapshot current = new Snapshot();
+        private static bool loaded;
 
         private sealed class Snapshot
         {
@@ -25,86 +26,89 @@ namespace CSVParserTool
             public DateTime LastWriteTimeUtc;
         }
 
-        public static void InitializeAndRestore()
-        {
-            if (initialized)
-                return;
-
-            try
-            {
-                var settings = Properties.Settings.Default;
-                Snapshot snapshot;
-                if (!TryReadSnapshot(DurableSettingsPath, out snapshot))
-                {
-                    TryUpgradeFrameworkSettings(settings);
-                    snapshot = SnapshotFromCurrentSettings(settings);
-
-                    Snapshot legacy = FindBestLegacySnapshot();
-                    if (legacy != null && legacy.Quality > snapshot.Quality)
-                        snapshot = legacy;
-
-                    WriteSnapshot(DurableSettingsPath, snapshot);
-                }
-
-                ApplySnapshot(settings, snapshot);
-                settings.UpgradeRequired = false;
-                settings.SettingsSaving += (_, __) =>
-                {
-                    try { WriteSnapshot(DurableSettingsPath, SnapshotFromCurrentSettings(settings)); }
-                    catch (Exception ex) { Debug.WriteLine("고정 사용자 설정 저장 실패: " + ex.Message); }
-                };
-                initialized = true;
-            }
-            catch (Exception ex)
-            {
-                // 설정 복구 실패가 앱 실행을 막지는 않도록 기존 기본 설정으로 계속 실행한다.
-                Debug.WriteLine("사용자 설정 초기화 실패: " + ex.Message);
-            }
-        }
-
-        private static string DurableSettingsPath => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "PJDev",
-            SettingsFolderName,
+        public static string SettingsFilePath => Path.Combine(
+            Path.GetDirectoryName(typeof(ToolSettingsStore).Assembly.Location),
             SettingsFileName);
 
-        private static void TryUpgradeFrameworkSettings(Properties.Settings settings)
+        public static string ProjectRootPath
         {
-            try
+            get { EnsureLoaded(); return current.ProjectRootPath; }
+            set { EnsureLoaded(); current.ProjectRootPath = value ?? string.Empty; }
+        }
+
+        public static string ExcelSourceFolderPath
+        {
+            get { EnsureLoaded(); return current.ExcelSourceFolderPath; }
+            set { EnsureLoaded(); current.ExcelSourceFolderPath = value ?? string.Empty; }
+        }
+
+        public static bool DarkMode
+        {
+            get { EnsureLoaded(); return current.DarkMode; }
+            set { EnsureLoaded(); current.DarkMode = value; }
+        }
+
+        public static string ExportVersion
+        {
+            get { EnsureLoaded(); return current.ExportVersion; }
+            set { EnsureLoaded(); current.ExportVersion = string.IsNullOrWhiteSpace(value) ? "1.0.0" : value; }
+        }
+
+        public static bool RemoveOrphanArtifactsOnExport
+        {
+            get { EnsureLoaded(); return current.RemoveOrphanArtifactsOnExport; }
+            set { EnsureLoaded(); current.RemoveOrphanArtifactsOnExport = value; }
+        }
+
+        public static void Load()
+        {
+            lock (Sync)
             {
-                if (settings.UpgradeRequired)
-                    settings.Upgrade();
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine("기존 .NET 사용자 설정 마이그레이션 실패: " + ex.Message);
+                if (loaded)
+                    return;
+
+                try
+                {
+                    if (!TryReadSnapshot(SettingsFilePath, out Snapshot snapshot))
+                    {
+                        snapshot = FindBestLegacySnapshot() ?? new Snapshot();
+                        WriteSnapshot(SettingsFilePath, snapshot);
+                    }
+                    current = snapshot;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("사용자 설정 불러오기 실패: " + ex.Message);
+                    current = new Snapshot();
+                }
+                finally
+                {
+                    loaded = true;
+                }
             }
         }
 
-        private static Snapshot SnapshotFromCurrentSettings(Properties.Settings settings)
+        public static void Save()
         {
-            var snapshot = new Snapshot
+            EnsureLoaded();
+            lock (Sync)
             {
-                ProjectRootPath = settings.ProjectRootPath ?? string.Empty,
-                ExcelSourceFolderPath = settings.ExcelSourceFolderPath ?? string.Empty,
-                DarkMode = settings.DarkMode,
-                ExportVersion = string.IsNullOrWhiteSpace(settings.ExportVersion) ? "1.0.0" : settings.ExportVersion,
-                RemoveOrphanArtifactsOnExport = settings.RemoveOrphanArtifactsOnExport
-            };
-            snapshot.Quality = CalculateQuality(snapshot);
-            return snapshot;
+                try
+                {
+                    current.Quality = CalculateQuality(current);
+                    WriteSnapshot(SettingsFilePath, current);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("사용자 설정 저장 실패: " + ex.Message);
+                }
+            }
         }
 
-        private static void ApplySnapshot(Properties.Settings settings, Snapshot snapshot)
+        private static void EnsureLoaded()
         {
-            if (snapshot == null)
-                return;
-
-            settings.ProjectRootPath = snapshot.ProjectRootPath ?? string.Empty;
-            settings.ExcelSourceFolderPath = snapshot.ExcelSourceFolderPath ?? string.Empty;
-            settings.DarkMode = snapshot.DarkMode;
-            settings.ExportVersion = string.IsNullOrWhiteSpace(snapshot.ExportVersion) ? "1.0.0" : snapshot.ExportVersion;
-            settings.RemoveOrphanArtifactsOnExport = snapshot.RemoveOrphanArtifactsOnExport;
+            if (!loaded)
+                Load();
         }
 
         private static Snapshot FindBestLegacySnapshot()
@@ -158,10 +162,10 @@ namespace CSVParserTool
                     document.Load(reader);
                 }
 
-                bool durableFormat = document.DocumentElement?.Name == "DataToolSettings";
+                bool fixedFormat = document.DocumentElement?.Name == "DataToolSettings";
                 string Read(string name)
                 {
-                    XmlNode node = durableFormat
+                    XmlNode node = fixedFormat
                         ? document.DocumentElement.SelectSingleNode(name)
                         : document.SelectSingleNode("//setting[@name='" + name + "']/value");
                     return node?.InnerText;
@@ -205,10 +209,7 @@ namespace CSVParserTool
 
         private static void WriteSnapshot(string path, Snapshot snapshot)
         {
-            string directory = Path.GetDirectoryName(path);
-            Directory.CreateDirectory(directory);
             string temporaryPath = path + ".tmp";
-
             var document = new XmlDocument { XmlResolver = null };
             XmlElement root = document.CreateElement("DataToolSettings");
             root.SetAttribute("version", "1");
