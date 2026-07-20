@@ -7,6 +7,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.WindowsAPICodePack.Dialogs;
@@ -62,6 +63,8 @@ namespace CSVParserTool
         private readonly List<FileListEntry> allListEntries = new List<FileListEntry>();
         private readonly Dictionary<string, string> previewCacheByPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private int previewRequestVersion;
+        private CancellationTokenSource previewCancellation;
+        private readonly SemaphoreSlim previewGenerationLock = new SemaphoreSlim(1, 1);
         private string currentPreviewCode = "";
 
         private sealed class FileListEntry
@@ -607,6 +610,8 @@ namespace CSVParserTool
             exportCompletionAnimationTimer = null;
             exportNotifyIcon?.Dispose();
             exportNotifyIcon = null;
+            previewCancellation?.Cancel();
+            previewCancellation = null;
         }
 
         private void FlashTaskbar(bool stop)
@@ -1441,7 +1446,6 @@ namespace CSVParserTool
             if (entry == null) return;
 
             currentSelectedXlsxPath = entry.FullPath;
-            TryRefreshXlsxTypeValidation(entry.FullPath);
             RefreshPreviewFromXlsx(entry.FullPath);
             AddLog($"XLSX 선택: {entry.DisplayName}", LogLevel.Info);
         }
@@ -1582,13 +1586,15 @@ namespace CSVParserTool
 
         private async void RefreshPreviewFromXlsx(string xlsxPath)
         {
+            int version = ++previewRequestVersion;
+            previewCancellation?.Cancel();
+
             if (string.IsNullOrWhiteSpace(xlsxPath) || !File.Exists(xlsxPath))
             {
                 SetPreviewCode(string.Empty);
                 return;
             }
 
-            int version = ++previewRequestVersion;
             string cacheKey = xlsxPath + "|" + exportVersion + "|" + File.GetLastWriteTimeUtc(xlsxPath).Ticks.ToString();
             if (previewCacheByPath.TryGetValue(cacheKey, out string cached))
             {
@@ -1596,20 +1602,42 @@ namespace CSVParserTool
                 return;
             }
 
-            SetPreviewCode("// preview loading...");
+            var cancellation = new CancellationTokenSource();
+            previewCancellation = cancellation;
+            CancellationToken token = cancellation.Token;
+            currentPreviewCode = string.Empty;
+            TextBox_Preview.Text = "Preview 준비 중…";
+            TextBox_Preview.ForeColor = UiTheme.TextMuted;
+
+            bool lockEntered = false;
             try
             {
+                // 빠르게 목록을 이동할 때 선택되지 않을 파일의 XLSX 로드를 시작하지 않는다.
+                await Task.Delay(80, token);
+                await previewGenerationLock.WaitAsync(token);
+                lockEntered = true;
+                token.ThrowIfCancellationRequested();
+
                 string preview = await Task.Run(() =>
                     EnumCatalogService.IsCatalogPath(xlsxPath)
                         ? EnumCatalogService.GenerateSource(EnumCatalogService.ParseXlsx(xlsxPath))
                         : CsvClassGenerator.GeneratePreviewFromXlsxFast(
                             xlsxPath,
                             maxRows: 64,
-                            exportVersion: exportVersion));
+                            exportVersion: exportVersion), token);
+
+                token.ThrowIfCancellationRequested();
                 if (version != previewRequestVersion)
                     return;
-                SetPreviewCode(preview);
+
+                if (previewCacheByPath.Count > 128)
+                    previewCacheByPath.Clear();
                 previewCacheByPath[cacheKey] = preview;
+                SetPreviewCode(preview);
+            }
+            catch (OperationCanceledException)
+            {
+                // 더 최근에 선택한 테이블이 있으면 이전 Preview 결과는 조용히 폐기한다.
             }
             catch (Exception ex)
             {
@@ -1618,8 +1646,15 @@ namespace CSVParserTool
                 SetPreviewCode(string.Empty);
                 AddLog($"미리보기 생성 실패: {ex.Message}", LogLevel.Warning);
             }
+            finally
+            {
+                if (lockEntered)
+                    previewGenerationLock.Release();
+                if (ReferenceEquals(previewCancellation, cancellation))
+                    previewCancellation = null;
+                cancellation.Dispose();
+            }
         }
-
         // =========================
         // 필터
         // =========================

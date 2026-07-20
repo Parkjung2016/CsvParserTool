@@ -141,7 +141,7 @@ namespace CSVParserTool
             UiTheme.StyleSecondaryButton(closeButton);
             UiTheme.StyleSecondaryButton(checkButton);
             UiTheme.StylePrimaryButton(updateButton);
-            checkButton.Click += async (_, __) => await CheckForUpdateAsync();
+            checkButton.Click += async (_, __) => await CheckForUpdateAsync(forceRefresh: true);
             updateButton.Click += async (_, __) => await InstallUpdateAsync();
             actions.Controls.Add(closeButton);
             actions.Controls.Add(checkButton);
@@ -166,7 +166,7 @@ namespace CSVParserTool
             FormClosed += (_, __) => cancellation?.Cancel();
         }
 
-        private async Task CheckForUpdateAsync()
+        private async Task CheckForUpdateAsync(bool forceRefresh = false)
         {
             if (checking) return;
             checking = true;
@@ -182,7 +182,7 @@ namespace CSVParserTool
 
             try
             {
-                availableUpdate = await ToolUpdateService.CheckAsync(cancellation.Token);
+                availableUpdate = await ToolUpdateService.CheckAsync(cancellation.Token, forceRefresh);
                 latestVersionLabel.Text = "v" + availableUpdate.VersionText;
                 latestDateLabel.Text = availableUpdate.PublishedAt;
                 releaseLink.Text = "릴리스 내용 보기";

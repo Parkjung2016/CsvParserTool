@@ -64,7 +64,6 @@ namespace CSVParserTool
         private int entranceAnimationFrame;
         private int contentAnimationFrame;
         private Panel contentTransitionOverlay;
-        private Bitmap contentTransitionBitmap;
         private int contentTransitionInitialWidth;
         private bool hasBeenShown;
 
@@ -226,7 +225,6 @@ namespace CSVParserTool
 
             bool animateContent = hasBeenShown && index != selectedSectionIndex && AnimationsEnabled;
             StopContentAnimation();
-            Bitmap previousContent = animateContent ? CaptureVisibleContent() : null;
 
             selectedSectionIndex = index;
             for (int i = 0; i < navigationButtons.Count; i++)
@@ -249,10 +247,8 @@ namespace CSVParserTool
             ResizeContentChildren();
             content.ResumeLayout(true);
 
-            if (animateContent && previousContent != null)
-                StartContentAnimation(previousContent);
-            else
-                previousContent?.Dispose();
+            if (animateContent)
+                StartContentAnimation();
         }
         private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled;
 
@@ -293,42 +289,28 @@ namespace CSVParserTool
             }
         }
 
-        private Bitmap CaptureVisibleContent()
-        {
-            if (!content.IsHandleCreated || content.ClientSize.Width <= 0 || content.ClientSize.Height <= 0)
-                return null;
-
-            try
-            {
-                var snapshot = new Bitmap(content.ClientSize.Width, content.ClientSize.Height);
-                content.DrawToBitmap(snapshot, content.ClientRectangle);
-                return snapshot;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private void StartContentAnimation(Bitmap previousContent)
+        private void StartContentAnimation()
         {
             contentAnimationFrame = 0;
-            contentTransitionBitmap = previousContent;
             contentTransitionInitialWidth = Math.Max(1, content.Width);
             contentTransitionOverlay = new BufferedPanel
             {
                 Bounds = content.Bounds,
                 BackColor = UiTheme.Surface,
-                BackgroundImage = contentTransitionBitmap,
-                BackgroundImageLayout = ImageLayout.None,
                 TabStop = false
             };
+            contentTransitionOverlay.Controls.Add(new Panel
+            {
+                Dock = DockStyle.Right,
+                Width = 3,
+                BackColor = UiTheme.Accent
+            });
             contentHost.Controls.Add(contentTransitionOverlay);
             contentTransitionOverlay.BringToFront();
 
             if (contentAnimationTimer == null)
             {
-                contentAnimationTimer = new System.Windows.Forms.Timer { Interval = 16 };
+                contentAnimationTimer = new System.Windows.Forms.Timer { Interval = 15 };
                 contentAnimationTimer.Tick += (_, __) => AdvanceContentAnimation();
             }
             contentAnimationTimer.Start();
@@ -337,7 +319,7 @@ namespace CSVParserTool
         private void AdvanceContentAnimation()
         {
             contentAnimationFrame++;
-            double progress = Math.Min(1D, contentAnimationFrame / 11D);
+            double progress = Math.Min(1D, contentAnimationFrame / 8D);
             double eased = 1D - Math.Pow(1D - progress, 3D);
             if (contentTransitionOverlay != null)
             {
@@ -355,12 +337,9 @@ namespace CSVParserTool
             if (contentTransitionOverlay != null)
             {
                 contentHost.Controls.Remove(contentTransitionOverlay);
-                contentTransitionOverlay.BackgroundImage = null;
                 contentTransitionOverlay.Dispose();
                 contentTransitionOverlay = null;
             }
-            contentTransitionBitmap?.Dispose();
-            contentTransitionBitmap = null;
             contentTransitionInitialWidth = 0;
         }
         private void RenderGettingStarted()

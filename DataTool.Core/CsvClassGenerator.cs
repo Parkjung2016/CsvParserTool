@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -73,7 +73,7 @@ public static class CsvClassGenerator
     /// <summary>UI 미리보기 전용: XLSX 앞부분만 읽어 빠르게 코드 스케치를 생성합니다.</summary>
     public static string GeneratePreviewFromXlsxFast(string xlsxPath, int maxRows = 64, string exportVersion = null)
     {
-        string csv = XlsxToCsvConverter.ConvertXlsxToCsvString(xlsxPath, maxRows);
+        string csv = XlsxPreviewReader.ReadFirstWorksheetAsCsv(xlsxPath, maxRows);
         string[] lines = csv
             .Replace("\r\n", "\n")
             .Replace('\r', '\n')

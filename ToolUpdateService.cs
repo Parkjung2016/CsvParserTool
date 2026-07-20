@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -7,12 +6,11 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
-using System.Runtime.Serialization;
-using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Xml;
 
 namespace CSVParserTool
 {
@@ -65,60 +63,104 @@ namespace CSVParserTool
 
     internal static class ToolUpdateService
     {
-        private const string LatestReleaseApi = "https://api.github.com/repos/Parkjung2016/CsvParserTool/releases/latest";
+        private const string LatestReleaseFeed = "https://github.com/Parkjung2016/CsvParserTool/releases.atom";
         private const string PreferredAssetName = "Tool.zip";
+        private static readonly TimeSpan CheckCacheDuration = TimeSpan.FromMinutes(15);
+        private static readonly SemaphoreSlim CheckLock = new SemaphoreSlim(1, 1);
+        private static ToolUpdateInfo cachedUpdate;
+        private static DateTimeOffset cachedUpdateAt;
 
-        [DataContract]
-        private sealed class GitHubRelease
-        {
-            [DataMember(Name = "tag_name")] public string TagName { get; set; }
-            [DataMember(Name = "html_url")] public string HtmlUrl { get; set; }
-            [DataMember(Name = "published_at")] public string PublishedAt { get; set; }
-            [DataMember(Name = "assets")] public List<GitHubAsset> Assets { get; set; }
-        }
-
-        [DataContract]
-        private sealed class GitHubAsset
-        {
-            [DataMember(Name = "name")] public string Name { get; set; }
-            [DataMember(Name = "browser_download_url")] public string DownloadUrl { get; set; }
-        }
-
-        public static async Task<ToolUpdateInfo> CheckAsync(CancellationToken cancellationToken)
+        public static async Task<ToolUpdateInfo> CheckAsync(
+            CancellationToken cancellationToken,
+            bool forceRefresh = false)
         {
             ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
-            using (var client = CreateHttpClient())
-            using (var response = await client.GetAsync(LatestReleaseApi, cancellationToken).ConfigureAwait(false))
+            if (!forceRefresh && IsFreshCache())
+                return cachedUpdate;
+
+            await CheckLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                if (response.StatusCode == HttpStatusCode.NotFound)
-                    throw new InvalidOperationException("아직 배포된 업데이트가 없습니다. 현재 설치된 버전을 계속 사용할 수 있습니다.");
+                if (!forceRefresh && IsFreshCache())
+                    return cachedUpdate;
 
-                response.EnsureSuccessStatusCode();
-                using (Stream stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                try
                 {
-                    var serializer = new DataContractJsonSerializer(typeof(GitHubRelease));
-                    var release = (GitHubRelease)serializer.ReadObject(stream);
-                    Version version = ToolVersionInfo.ParseVersion(release?.TagName);
-                    if (version == null)
-                        throw new InvalidOperationException("GitHub Release의 버전 태그를 읽을 수 없습니다.");
-
-                    GitHubAsset asset = release.Assets?.FirstOrDefault(x =>
-                        string.Equals(x.Name, PreferredAssetName, StringComparison.OrdinalIgnoreCase));
-
-                    return new ToolUpdateInfo
+                    using (var client = CreateHttpClient())
+                    using (var response = await client.GetAsync(LatestReleaseFeed, cancellationToken).ConfigureAwait(false))
                     {
-                        Version = version,
-                        VersionText = ToolVersionInfo.Format(version),
-                        PublishedAt = FormatPublishedAt(release.PublishedAt),
-                        NotesUrl = IsAllowedGitHubUrl(release.HtmlUrl) ? release.HtmlUrl : ToolVersionInfo.ReleasesUrl,
-                        DownloadUrl = IsAllowedGitHubUrl(asset?.DownloadUrl) ? asset.DownloadUrl : null,
-                        AssetName = asset?.Name,
-                        IsNewer = version > ToolVersionInfo.Version
-                    };
+                        response.EnsureSuccessStatusCode();
+                        using (Stream stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                        {
+                            ToolUpdateInfo update = ReadLatestReleaseFromAtom(stream);
+                            cachedUpdate = update;
+                            cachedUpdateAt = DateTimeOffset.UtcNow;
+                            return update;
+                        }
+                    }
                 }
+                catch when (cachedUpdate != null)
+                {
+                    // 일시적인 네트워크 오류가 있어도 마지막으로 확인한 버전 정보는 계속 보여준다.
+                    return cachedUpdate;
+                }
+            }
+            finally
+            {
+                CheckLock.Release();
             }
         }
 
+        private static bool IsFreshCache() =>
+            cachedUpdate != null && DateTimeOffset.UtcNow - cachedUpdateAt < CheckCacheDuration;
+
+        private static ToolUpdateInfo ReadLatestReleaseFromAtom(Stream stream)
+        {
+            var document = new XmlDocument { XmlResolver = null };
+            using (XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                IgnoreComments = true,
+                IgnoreWhitespace = true,
+                CloseInput = false
+            }))
+            {
+                document.Load(reader);
+            }
+
+            var namespaces = new XmlNamespaceManager(document.NameTable);
+            namespaces.AddNamespace("atom", "http://www.w3.org/2005/Atom");
+            XmlNode entry = document.SelectSingleNode("/atom:feed/atom:entry", namespaces);
+            if (entry == null)
+                throw new InvalidOperationException("아직 배포된 업데이트가 없습니다. 현재 설치된 버전을 계속 사용할 수 있습니다.");
+
+            var link = entry.SelectSingleNode("atom:link[@rel='alternate']", namespaces) as XmlElement;
+            string notesUrl = link?.GetAttribute("href");
+            if (!Uri.TryCreate(notesUrl, UriKind.Absolute, out Uri releaseUri)
+                || !IsAllowedGitHubUrl(notesUrl))
+                throw new InvalidDataException("GitHub Release 주소를 읽을 수 없습니다.");
+
+            string tag = Uri.UnescapeDataString(releaseUri.Segments.LastOrDefault()?.Trim('/') ?? string.Empty);
+            Version version = ToolVersionInfo.ParseVersion(tag);
+            if (version == null)
+                throw new InvalidDataException("GitHub Release의 버전 태그를 읽을 수 없습니다.");
+
+            string updated = entry.SelectSingleNode("atom:updated", namespaces)?.InnerText;
+            string downloadUrl = ToolVersionInfo.RepositoryUrl
+                + "/releases/download/" + Uri.EscapeDataString(tag)
+                + "/" + PreferredAssetName;
+
+            return new ToolUpdateInfo
+            {
+                Version = version,
+                VersionText = ToolVersionInfo.Format(version),
+                PublishedAt = FormatPublishedAt(updated),
+                NotesUrl = notesUrl,
+                DownloadUrl = downloadUrl,
+                AssetName = PreferredAssetName,
+                IsNewer = version > ToolVersionInfo.Version
+            };
+        }
         public static async Task<string> DownloadAsync(
             ToolUpdateInfo update,
             IProgress<int> progress,
@@ -240,7 +282,7 @@ namespace CSVParserTool
         {
             var client = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
             client.DefaultRequestHeaders.UserAgent.ParseAdd("PJDev-Data-Tool/" + ToolVersionInfo.VersionText);
-            client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+            client.DefaultRequestHeaders.Accept.ParseAdd("*/*");
             return client;
         }
 

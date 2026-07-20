@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace CSVParserTool
@@ -8,6 +9,10 @@ namespace CSVParserTool
     /// <summary>미리보기 RichTextBox용 간단 C# 구문 색상 (IDE 느낌).</summary>
     internal static class CSharpPreviewHighlighter
     {
+        private const int WmSetRedraw = 0x000B;
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int message, IntPtr wParam, IntPtr lParam);
         private static readonly HashSet<string> Keywords = new HashSet<string>(StringComparer.Ordinal)
         {
             "public", "private", "protected", "internal", "static", "readonly", "class", "struct",
@@ -23,6 +28,9 @@ namespace CSVParserTool
 
             PreviewSyntaxColors colors = dark ? PreviewSyntaxColors.Dark : PreviewSyntaxColors.Light;
 
+            bool suspendRedraw = box.IsHandleCreated;
+            if (suspendRedraw)
+                SendMessage(box.Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
             box.SuspendLayout();
             box.Clear();
             box.BackColor = colors.Background;
@@ -31,7 +39,7 @@ namespace CSVParserTool
 
             if (string.IsNullOrEmpty(code))
             {
-                box.ResumeLayout();
+                FinishUpdate(box, suspendRedraw);
                 return;
             }
 
@@ -138,9 +146,16 @@ namespace CSVParserTool
 
             box.SelectionStart = 0;
             box.SelectionLength = 0;
-            box.ResumeLayout();
+            FinishUpdate(box, suspendRedraw);
         }
 
+        private static void FinishUpdate(RichTextBox box, bool redrawWasSuspended)
+        {
+            box.ResumeLayout();
+            if (redrawWasSuspended)
+                SendMessage(box.Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
+            box.Invalidate();
+        }
         private static void Append(RichTextBox box, string text, Color color)
         {
             box.SelectionColor = color;
