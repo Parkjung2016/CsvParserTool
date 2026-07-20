@@ -53,7 +53,7 @@ namespace CSVParserTool
             this.Label_SectionList = new System.Windows.Forms.Label();
             this.Btn_RefreshList = new System.Windows.Forms.Button();
             this.Panel_ListCard = new System.Windows.Forms.Panel();
-            this.ListBox_CsvFiles = new System.Windows.Forms.ListBox();
+            this.ListBox_CsvFiles = new System.Windows.Forms.CheckedListBox();
             this.Label_SectionPreview = new System.Windows.Forms.Label();
             this.Panel_PreviewCard = new System.Windows.Forms.Panel();
             this.TextBox_Preview = new System.Windows.Forms.RichTextBox();
@@ -330,7 +330,7 @@ namespace CSVParserTool
             this.Chk_RemoveOrphanArtifacts.Name = "Chk_RemoveOrphanArtifacts";
             this.Chk_RemoveOrphanArtifacts.Size = new System.Drawing.Size(242, 19);
             this.Chk_RemoveOrphanArtifacts.TabIndex = 1;
-            this.Chk_RemoveOrphanArtifacts.Text = "XLSX 없는 CSV·Bytes·Container 정리";
+            this.Chk_RemoveOrphanArtifacts.Text = "원본 XLSX가 없는 이전 출력 파일 삭제";
             this.Chk_RemoveOrphanArtifacts.UseVisualStyleBackColor = true;
             this.Chk_RemoveOrphanArtifacts.CheckedChanged += new System.EventHandler(this.Chk_RemoveOrphanArtifacts_CheckedChanged);
             // 
@@ -546,7 +546,7 @@ namespace CSVParserTool
             this.Label_SectionList.Padding = new System.Windows.Forms.Padding(2, 0, 0, 8);
             this.Label_SectionList.Size = new System.Drawing.Size(198, 28);
             this.Label_SectionList.TabIndex = 0;
-            this.Label_SectionList.Text = "테이블 목록";
+            this.Label_SectionList.Text = "테이블 · Enum";
             // 
             // Btn_RefreshList
             // 
@@ -573,6 +573,7 @@ namespace CSVParserTool
             // 
             // ListBox_CsvFiles
             // 
+            this.ListBox_CsvFiles.CheckOnClick = false;
             this.ListBox_CsvFiles.Dock = System.Windows.Forms.DockStyle.Fill;
             this.ListBox_CsvFiles.IntegralHeight = false;
             this.ListBox_CsvFiles.ItemHeight = 26;
@@ -580,6 +581,7 @@ namespace CSVParserTool
             this.ListBox_CsvFiles.Name = "ListBox_CsvFiles";
             this.ListBox_CsvFiles.Size = new System.Drawing.Size(274, 252);
             this.ListBox_CsvFiles.TabIndex = 0;
+            this.ListBox_CsvFiles.ItemCheck += new System.Windows.Forms.ItemCheckEventHandler(this.ListBox_CsvFiles_ItemCheck);
             this.ListBox_CsvFiles.SelectedIndexChanged += new System.EventHandler(this.ListBox_CsvFiles_SelectedIndexChanged);
             this.ListBox_CsvFiles.MouseDoubleClick += new System.Windows.Forms.MouseEventHandler(this.ListBox_CsvFiles_MouseDoubleClick);
             this.ListBox_CsvFiles.KeyDown += new System.Windows.Forms.KeyEventHandler(this.ListBox_CsvFiles_KeyDown);
@@ -899,7 +901,7 @@ namespace CSVParserTool
 
         private ComboBox Combo_LogFilter;
 
-        private ListBox ListBox_CsvFiles;
+        private CheckedListBox ListBox_CsvFiles;
         private RichTextBox TextBox_Preview;
         private RichTextBox TextBox_Log;
 

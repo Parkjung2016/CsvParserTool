@@ -107,6 +107,9 @@ namespace CSVParserTool
             HashSet<string> seen,
             List<string> target)
         {
+            if (CsvColumnTypes.TryGetArrayElementType(columnType, out string elementType))
+                columnType = elementType;
+
             if (enums == null || !enums.ContainsKey(columnType))
                 return;
 
@@ -307,6 +310,9 @@ namespace CSVParserTool
         private static string BuildSerializeStatement(FieldModel field)
         {
             string access = $"value.{field.PropertyName}";
+            if (CsvColumnTypes.TryGetArrayElementType(field.ColumnType, out string elementType))
+                return BuildSerializeArrayStatement(access, elementType);
+
             switch (GetKind(field.ColumnType))
             {
                 case ColumnKind.Int:
@@ -327,6 +333,9 @@ namespace CSVParserTool
         private static string BuildDeserializeStatement(FieldModel field)
         {
             string target = $"____result.{field.PropertyName}";
+            if (CsvColumnTypes.TryGetArrayElementType(field.ColumnType, out string elementType))
+                return BuildDeserializeArrayStatement(target, elementType);
+
             switch (GetKind(field.ColumnType))
             {
                 case ColumnKind.Int:
@@ -348,6 +357,75 @@ namespace CSVParserTool
             }
         }
 
+        private static string BuildSerializeArrayStatement(string access, string elementType)
+        {
+            string writeItem = BuildSerializeValueStatement(elementType, "item");
+            return
+                $"if ({access} == null) writer.WriteNil();\n" +
+                "            else\n" +
+                "            {\n" +
+                $"                writer.WriteArrayHeader({access}.Length);\n" +
+                $"                foreach (var item in {access})\n" +
+                $"                    {writeItem}\n" +
+                "            }";
+        }
+
+        private static string BuildDeserializeArrayStatement(string target, string elementType)
+        {
+            string csharpType = CSharpTypeExpression(elementType);
+            string readItem = BuildDeserializeValueExpression(elementType);
+            return
+                "{\n" +
+                "                            if (reader.TryReadNil())\n" +
+                $"                                {target} = global::System.Array.Empty<{csharpType}>();\n" +
+                "                            else\n" +
+                "                            {\n" +
+                "                                int itemCount = reader.ReadArrayHeader();\n" +
+                $"                                var items = new {csharpType}[itemCount];\n" +
+                "                                for (int itemIndex = 0; itemIndex < itemCount; itemIndex++)\n" +
+                $"                                    items[itemIndex] = {readItem};\n" +
+                $"                                {target} = items;\n" +
+                "                            }\n" +
+                "                        }";
+        }
+
+        private static string BuildSerializeValueStatement(string columnType, string access)
+        {
+            switch (GetKind(columnType))
+            {
+                case ColumnKind.Int:
+                case ColumnKind.UInt:
+                case ColumnKind.Float:
+                case ColumnKind.Double:
+                case ColumnKind.Bool:
+                    return $"writer.Write({access});";
+                case ColumnKind.String:
+                    return $"global::MessagePack.FormatterResolverExtensions.GetFormatterWithVerify<string>(formatterResolver).Serialize(ref writer, {access}, options);";
+                case ColumnKind.Enum:
+                    return $"writer.Write((global::System.Int32){access});";
+                default:
+                    throw new InvalidOperationException($"Unsupported array element type: {columnType}");
+            }
+        }
+
+        private static string BuildDeserializeValueExpression(string columnType)
+        {
+            switch (GetKind(columnType))
+            {
+                case ColumnKind.Int: return "reader.ReadInt32()";
+                case ColumnKind.UInt: return "reader.ReadUInt32()";
+                case ColumnKind.Float: return "reader.ReadSingle()";
+                case ColumnKind.Double: return "reader.ReadDouble()";
+                case ColumnKind.Bool: return "reader.ReadBoolean()";
+                case ColumnKind.String: return "global::MessagePack.FormatterResolverExtensions.GetFormatterWithVerify<string>(formatterResolver).Deserialize(ref reader, options)";
+                case ColumnKind.Enum: return $"({CSharpTypeExpression(columnType)})reader.ReadInt32()";
+                default: throw new InvalidOperationException($"Unsupported array element type: {columnType}");
+            }
+        }
+
+        private static string CSharpTypeExpression(string columnType) =>
+            CsvColumnTypes.IsPrimitiveType(columnType) ? columnType : $"global::PJDev.Data.{columnType}";
+
         private enum ColumnKind
         {
             Int,
@@ -356,13 +434,14 @@ namespace CSVParserTool
             Double,
             Bool,
             String,
-            Enum
+            Enum,
+            Array
         }
 
         private static ColumnKind GetKind(string columnType)
         {
-            if (columnType.StartsWith("List<", StringComparison.Ordinal))
-                throw new InvalidOperationException($"List column type is not supported: {columnType}");
+            if (CsvColumnTypes.TryGetArrayElementType(columnType, out _))
+                return ColumnKind.Array;
 
             switch (columnType)
             {

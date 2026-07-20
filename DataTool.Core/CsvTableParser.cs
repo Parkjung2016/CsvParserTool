@@ -6,14 +6,31 @@ using System.Text;
 
 namespace CSVParserTool
 {
+    public sealed class CsvColumnReference
+    {
+        public string TableName { get; }
+        public string ColumnName { get; }
+        public bool IsArray { get; }
+
+        public CsvColumnReference(string tableName, string columnName, bool isArray = false)
+        {
+            TableName = tableName;
+            ColumnName = columnName;
+            IsArray = isArray;
+        }
+    }
+
     /// <summary>CSV 한 테이블 파싱 결과 — 코드 생성·MessagePack·NDB보내기 공통.</summary>
     public sealed class CsvTableParseResult
     {
         public string ClassName { get; }
         public string[] Headers { get; }
         public string[] ColumnTypes { get; }
-        public IReadOnlyList<string> EnumDeclarationOrder { get; }
-        public IReadOnlyDictionary<string, IReadOnlyList<string>> EnumMembers { get; }
+        public CsvColumnReference[] ColumnReferences { get; }
+        private readonly List<string> enumDeclarationOrder;
+        public IReadOnlyList<string> EnumDeclarationOrder => enumDeclarationOrder;
+        private readonly Dictionary<string, IReadOnlyList<string>> enumMembers;
+        public IReadOnlyDictionary<string, IReadOnlyList<string>> EnumMembers => enumMembers;
         public IReadOnlyList<string[]> DataRows { get; }
 
         public CsvTableParseResult(
@@ -23,13 +40,52 @@ namespace CSVParserTool
             IReadOnlyList<string> enumDeclarationOrder,
             IReadOnlyDictionary<string, IReadOnlyList<string>> enumMembers,
             IReadOnlyList<string[]> dataRows)
+            : this(className, headers, columnTypes, null, enumDeclarationOrder, enumMembers, dataRows)
+        {
+        }
+
+        public CsvTableParseResult(
+            string className,
+            string[] headers,
+            string[] columnTypes,
+            CsvColumnReference[] columnReferences,
+            IReadOnlyList<string> enumDeclarationOrder,
+            IReadOnlyDictionary<string, IReadOnlyList<string>> enumMembers,
+            IReadOnlyList<string[]> dataRows)
         {
             ClassName = className;
             Headers = headers;
             ColumnTypes = columnTypes;
-            EnumDeclarationOrder = enumDeclarationOrder;
-            EnumMembers = enumMembers;
+            ColumnReferences = columnReferences ?? new CsvColumnReference[headers?.Length ?? 0];
+            this.enumDeclarationOrder = enumDeclarationOrder == null
+                ? new List<string>()
+                : new List<string>(enumDeclarationOrder);
+            this.enumMembers = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+            if (enumMembers != null)
+            {
+                foreach (var pair in enumMembers)
+                    this.enumMembers[pair.Key] = pair.Value;
+            }
             DataRows = dataRows;
+        }
+
+        internal void RegisterReferencedEnum(string enumName, IReadOnlyList<string> members)
+        {
+            if (!string.IsNullOrEmpty(enumName) && members != null && !enumMembers.ContainsKey(enumName))
+                enumMembers[enumName] = members;
+        }
+
+        internal void UseCatalogEnum(string enumName, IReadOnlyList<string> members)
+        {
+            if (string.IsNullOrWhiteSpace(enumName) || members == null)
+                return;
+
+            enumMembers[enumName] = members;
+            for (int i = enumDeclarationOrder.Count - 1; i >= 0; i--)
+            {
+                if (string.Equals(enumDeclarationOrder[i], enumName, StringComparison.OrdinalIgnoreCase))
+                    enumDeclarationOrder.RemoveAt(i);
+            }
         }
     }
 
@@ -95,12 +151,6 @@ namespace CSVParserTool
             return result.ToArray();
         }
 
-        private sealed class EnumAccumulator
-        {
-            public readonly List<string> DeclarationOrder = new();
-            public readonly Dictionary<string, List<string>> Members = new(StringComparer.Ordinal);
-        }
-
         public static CsvTableParseResult Parse(string csvPath, string classNameOverride = null, CsvParseOptions options = null)
         {
             if (string.IsNullOrWhiteSpace(csvPath) || !File.Exists(csvPath))
@@ -126,7 +176,6 @@ namespace CSVParserTool
             string[] rawHeader = SplitCsvLine(lines[tableLineIndexes[0]]);
             bool[] noteKeepMask = BuildExportColumnKeepMask(rawHeader);
             string[] headers = FilterExportColumns(rawHeader, noteKeepMask);
-            var enumAcc = new EnumAccumulator();
 
             if (tableLineIndexes.Count < 2)
             {
@@ -159,7 +208,7 @@ namespace CSVParserTool
             if (!CsvColumnTypes.LooksLikeTypeRow(typeProbe, headers))
             {
                 throw new InvalidOperationException(
-                    "3행이 타입 행이 아닙니다. 각 열에 bool, uint, int, float, double, string, enum 등을 지정하세요.");
+                    "3행이 타입 행이 아닙니다. 각 열에 int, string, enum:타입명, int[], ref 테이블.컬럼 등을 지정하세요.");
             }
 
             const int typeLineTableIndex = 2;
@@ -170,36 +219,32 @@ namespace CSVParserTool
                 noteKeepMask);
 
             var columnTypes = new string[headers.Length];
+            var columnReferences = new CsvColumnReference[headers.Length];
             for (int i = 0; i < headers.Length; i++)
             {
                 string header = headers[i];
                 string typeCell = i < explicitTypeCells.Length ? explicitTypeCells[i] : string.Empty;
-                columnTypes[i] = ResolveExplicitColumnType(typeCell, header);
+                if (TryParseReferenceType(typeCell, out CsvColumnReference reference))
+                {
+                    columnReferences[i] = reference;
+                    columnTypes[i] = "string";
+                }
+                else
+                {
+                    columnTypes[i] = ResolveExplicitColumnType(typeCell, header);
+                }
             }
 
             bool[] versionKeepMask = BuildVersionColumnKeepMask(headers, versionCells, options?.ExportVersion);
             headers = FilterColumnsByMask(headers, versionKeepMask);
             columnTypes = FilterColumnsByMask(columnTypes, versionKeepMask);
+            columnReferences = FilterColumnsByMask(columnReferences, versionKeepMask);
 
             if (headers.Length == 0)
                 throw new InvalidOperationException("Export 버전에 포함되는 컬럼이 없습니다. Id 열과 버전을 확인하세요.");
 
             if (FindIdColumnIndex(headers) < 0)
                 throw new InvalidOperationException("Export 결과에 Id 컬럼이 필요합니다.");
-
-            for (int t = firstDataTableIndex; t < tableLineIndexes.Count; t++)
-            {
-                string[] values = FilterExportColumns(SplitCsvLine(lines[tableLineIndexes[t]]), noteKeepMask);
-                values = FilterColumnsByMask(values, versionKeepMask);
-                for (int i = 0; i < headers.Length; i++)
-                {
-                    if (CsvColumnTypes.IsEnumHeader(headers[i]))
-                    {
-                        string cell = i < values.Length ? values[i] : string.Empty;
-                        RegisterEnum(enumAcc, headers[i], cell);
-                    }
-                }
-            }
 
             var dataRows = new List<string[]>();
             for (int t = firstDataTableIndex; t < tableLineIndexes.Count; t++)
@@ -208,16 +253,13 @@ namespace CSVParserTool
                 dataRows.Add(FilterColumnsByMask(row, versionKeepMask));
             }
 
-            var enumRead = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
-            foreach (var kv in enumAcc.Members)
-                enumRead[kv.Key] = kv.Value;
-
             return new CsvTableParseResult(
                 className,
                 headers,
                 columnTypes,
-                enumAcc.DeclarationOrder,
-                enumRead,
+                columnReferences,
+                Array.Empty<string>(),
+                new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal),
                 dataRows);
         }
 
@@ -331,6 +373,22 @@ namespace CSVParserTool
             return result.ToArray();
         }
 
+        private static CsvColumnReference[] FilterColumnsByMask(CsvColumnReference[] cells, bool[] keepMask)
+        {
+            if (cells == null || keepMask == null || keepMask.Length == 0)
+                return Array.Empty<CsvColumnReference>();
+
+            var result = new List<CsvColumnReference>();
+            int count = Math.Min(cells.Length, keepMask.Length);
+            for (int i = 0; i < count; i++)
+            {
+                if (keepMask[i])
+                    result.Add(cells[i]);
+            }
+
+            return result.ToArray();
+        }
+
         private static void EnsureCompleteTypeRow(string[] typeCells, string[] headers)
         {
             for (int i = 0; i < headers.Length; i++)
@@ -339,7 +397,7 @@ namespace CSVParserTool
                 if (string.IsNullOrEmpty(cell))
                 {
                     throw new InvalidOperationException(
-                        $"3행 타입이 비어 있습니다. 열 '{headers[i]}'에 bool, int, float, string 등 타입을 지정하세요.");
+                        $"3행 타입이 비어 있습니다. 열 '{headers[i]}'에 int, string, enum:타입명, int[] 등 타입을 지정하세요.");
                 }
             }
         }
@@ -352,20 +410,48 @@ namespace CSVParserTool
                     $"열 '{header}': 타입이 비어 있습니다. 3행에 타입을 지정하세요.");
             }
 
-            if (explicitTypeCell.Trim().StartsWith("List<", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException(
-                    $"열 '{header}': List 타입은 지원하지 않습니다.");
-            }
-
             if (!CsvColumnTypes.TryNormalizeExplicit(explicitTypeCell.Trim(), header, out string explicitType))
             {
                 throw new InvalidOperationException(
                     $"열 '{header}': 인식할 수 없는 타입 '{explicitTypeCell.Trim()}'. " +
-                    "bool, uint, int, float, double, string, enum(또는 E접두 enum명)만 사용할 수 있습니다.");
+                    "int, string, enum:타입명, int[], enum:타입명[], ref 테이블.컬럼을 사용할 수 있습니다.");
             }
 
             return explicitType;
+        }
+
+        private static bool TryParseReferenceType(string raw, out CsvColumnReference reference)
+        {
+            reference = null;
+            raw = raw?.Trim() ?? string.Empty;
+            bool isArray = false;
+            if (CsvColumnTypes.TryGetArrayElementType(raw, out string arrayElement))
+            {
+                raw = arrayElement;
+                isArray = true;
+            }
+
+            if (!CsvColumnTypes.IsReferenceTypeToken(raw))
+                return false;
+
+            string target = raw.Substring(3).Trim();
+            int dot = target.LastIndexOf('.');
+            if (dot <= 0 || dot >= target.Length - 1)
+            {
+                throw new InvalidOperationException(
+                    $"참조 타입 '{raw}' 형식이 올바르지 않습니다. (예: ref CharacterStat.Speed)");
+            }
+
+            string tableName = target.Substring(0, dot).Trim();
+            string columnName = target.Substring(dot + 1).Trim();
+            if (string.IsNullOrWhiteSpace(tableName) || string.IsNullOrWhiteSpace(columnName))
+            {
+                throw new InvalidOperationException(
+                    $"참조 타입 '{raw}' 형식이 올바르지 않습니다. (예: ref CharacterStat.Speed)");
+            }
+
+            reference = new CsvColumnReference(tableName, columnName, isArray);
+            return true;
         }
 
         public static string SanitizeIdentifier(string s)
@@ -440,37 +526,5 @@ namespace CSVParserTool
             return list.ToArray();
         }
 
-        private static string InferType(string value, string fieldName, EnumAccumulator acc)
-        {
-            value = value?.Trim() ?? string.Empty;
-
-            if (value.StartsWith("\"", StringComparison.Ordinal))
-                return "string";
-
-            if (CsvColumnTypes.IsEnumHeader(fieldName))
-            {
-                RegisterEnum(acc, fieldName, value);
-                return fieldName;
-            }
-
-            return InferPrimitiveType(value);
-        }
-
-        private static void RegisterEnum(EnumAccumulator acc, string enumName, string value)
-        {
-            if (!acc.Members.TryGetValue(enumName, out var list))
-            {
-                list = new List<string>();
-                acc.Members[enumName] = list;
-                acc.DeclarationOrder.Add(enumName);
-            }
-
-            string id = SanitizeIdentifier(value.Trim());
-            if (string.IsNullOrEmpty(id) || id == "_")
-                return;
-
-            if (!list.Contains(id))
-                list.Add(id);
-        }
     }
 }

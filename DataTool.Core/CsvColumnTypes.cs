@@ -75,27 +75,124 @@ namespace CSVParserTool
             if (string.IsNullOrEmpty(raw))
                 return false;
 
-            if (raw.StartsWith("List<", StringComparison.OrdinalIgnoreCase))
-                return false;
-
-            if (IsEnumHeader(headerName))
+            if (TryUnwrapArrayToken(raw, out string arrayElementToken))
             {
-                if (raw.Equals("enum", StringComparison.OrdinalIgnoreCase)
-                    || raw.Equals(headerName, StringComparison.OrdinalIgnoreCase))
+                if (TryUnwrapArrayToken(arrayElementToken, out _))
+                    return false;
+
+                if (IsReferenceTypeToken(arrayElementToken))
                 {
-                    columnType = headerName;
+                    columnType = "string[]";
                     return true;
                 }
-            }
 
-            if (TryNormalizePrimitive(raw, out string primitive))
-            {
-                columnType = primitive;
+                if (!TryNormalizeScalar(arrayElementToken, headerName, out string arrayElementType))
+                    return false;
+
+                columnType = arrayElementType + "[]";
                 return true;
             }
 
-            return false;
+            if (IsReferenceTypeToken(raw))
+            {
+                // Reference types are resolved after every table has been parsed.
+                columnType = "string";
+                return true;
+            }
+
+            return TryNormalizeScalar(raw, headerName, out columnType);
         }
+
+        private static bool TryNormalizeScalar(string raw, string headerName, out string columnType)
+        {
+            columnType = null;
+            if (TryNormalizeEnum(raw, headerName, out string enumName))
+            {
+                columnType = enumName;
+                return true;
+            }
+
+            return TryNormalizePrimitive(raw, out columnType);
+        }
+
+        private static bool TryNormalizeEnum(string raw, string headerName, out string enumName)
+        {
+            enumName = null;
+            raw = raw?.Trim() ?? string.Empty;
+            if (!raw.StartsWith("enum:", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            enumName = raw.Substring(5).Trim();
+            if (!IsValidTypeIdentifier(enumName))
+            {
+                enumName = null;
+                return false;
+            }
+
+            return true;
+        }
+        public static bool TryGetArrayElementType(string columnType, out string elementType)
+        {
+            elementType = null;
+            if (!TryUnwrapArrayToken(columnType, out string rawElement))
+                return false;
+
+            elementType = rawElement.Trim();
+            return !string.IsNullOrEmpty(elementType);
+        }
+
+        internal static string[] SplitArrayCell(string value)
+        {
+            value = value?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(value))
+                return Array.Empty<string>();
+
+            string[] rawItems = value.Split('|');
+            var items = new List<string>(rawItems.Length);
+            foreach (string rawItem in rawItems)
+            {
+                string item = rawItem?.Trim() ?? string.Empty;
+                if (!string.IsNullOrEmpty(item))
+                    items.Add(item);
+            }
+            return items.ToArray();
+        }
+
+        private static bool TryUnwrapArrayToken(string raw, out string elementToken)
+        {
+            elementToken = null;
+            raw = raw?.Trim() ?? string.Empty;
+            if (!raw.EndsWith("[]", StringComparison.Ordinal))
+                return false;
+
+            elementToken = raw.Substring(0, raw.Length - 2).Trim();
+            return !string.IsNullOrEmpty(elementToken);
+        }
+
+        public static bool IsValidTypeIdentifier(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            value = value.Trim();
+            if (!char.IsLetter(value[0]) && value[0] != '_')
+                return false;
+
+            for (int i = 1; i < value.Length; i++)
+            {
+                if (!char.IsLetterOrDigit(value[i]) && value[i] != '_')
+                    return false;
+            }
+
+            return true;
+        }
+
+        public static bool IsReferenceTypeToken(string raw) =>
+            !string.IsNullOrWhiteSpace(raw)
+            && raw.TrimStart().StartsWith("ref ", StringComparison.OrdinalIgnoreCase);
+
+        public static bool IsPrimitiveType(string columnType) =>
+            !string.IsNullOrWhiteSpace(columnType) && PrimitiveNames.Contains(columnType.Trim());
 
         internal static string InferPrimitiveFromValue(string value)
         {
@@ -112,9 +209,6 @@ namespace CSVParserTool
                 return "bool";
             return "string";
         }
-
-        internal static bool IsEnumHeader(string headerName) =>
-            !string.IsNullOrEmpty(headerName) && headerName.StartsWith("E", StringComparison.Ordinal);
 
         private static bool TryNormalizePrimitive(string raw, out string primitive)
         {

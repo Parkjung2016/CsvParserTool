@@ -19,6 +19,8 @@ namespace CSVParserTool
                 string fileName = Path.GetFileName(path);
                 if (fileName.StartsWith("~$", StringComparison.Ordinal))
                     continue;
+                if (EnumCatalogService.IsCatalogPath(path))
+                    continue;
 
                 string stem = Path.GetFileNameWithoutExtension(path);
                 if (!string.IsNullOrWhiteSpace(stem))

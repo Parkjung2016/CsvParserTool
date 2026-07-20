@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO;
@@ -13,7 +14,11 @@ namespace CSVParserTool
     /// <summary>Exports the first worksheet of each workbook to UTF-8 CSV for the data pipeline.</summary>
     public static class XlsxToCsvConverter
     {
-        public static int ConvertAllXlsxInFolder(string xlsxFolder, string csvOutputFolder, Action<string> log)
+        public static int ConvertAllXlsxInFolder(
+            string xlsxFolder,
+            string csvOutputFolder,
+            Action<string> log,
+            ICollection<string> includedStems = null)
         {
             if (string.IsNullOrWhiteSpace(xlsxFolder) || !Directory.Exists(xlsxFolder))
                 throw new ArgumentException("XLSX folder is missing or invalid.", nameof(xlsxFolder));
@@ -22,6 +27,12 @@ namespace CSVParserTool
 
             string[] paths = Directory.GetFiles(xlsxFolder, "*.xlsx")
                 .Where(path => !Path.GetFileName(path).StartsWith("~$", StringComparison.Ordinal))
+                .Where(path => !EnumCatalogService.IsCatalogPath(path))
+                .Where(path =>
+                    includedStems == null
+                    || includedStems.Contains(
+                        Path.GetFileNameWithoutExtension(path),
+                        StringComparer.OrdinalIgnoreCase))
                 .ToArray();
 
             int converted = 0;

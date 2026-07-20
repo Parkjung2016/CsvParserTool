@@ -1,0 +1,78 @@
+name: Publish Data Tool Release
+
+on:
+  push:
+    tags:
+      - "[0-9]*"
+      - "v[0-9]*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (example: 1.2.3)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Apply tag version
+        shell: pwsh
+        run: |
+          $tag = $env:RELEASE_TAG.TrimStart('v', 'V')
+          if ($tag -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Release tag must look like 1.2.3 or v1.2.3. Received: $tag"
+          }
+          $assemblyVersion = "$tag.0"
+          $path = "Properties/AssemblyInfo.cs"
+          $text = Get-Content -LiteralPath $path -Raw
+          $text = $text -replace 'AssemblyVersion\("[^"]+"\)', "AssemblyVersion(`"$assemblyVersion`")"
+          $text = $text -replace 'AssemblyFileVersion\("[^"]+"\)', "AssemblyFileVersion(`"$assemblyVersion`")"
+          $text = $text -replace 'AssemblyInformationalVersion\("[^"]+"\)', "AssemblyInformationalVersion(`"$tag`")"
+          $text = $text -replace 'AssemblyMetadata\("UpdateDate",\s*"[^"]+"\)', "AssemblyMetadata(`"UpdateDate`", `"$(Get-Date -Format yyyy-MM-dd)`")"
+          Set-Content -LiteralPath $path -Value $text -Encoding UTF8
+
+      - name: Build portable executables
+        shell: pwsh
+        run: dotnet build CSVParserTool.slnx -c Release
+
+      - name: Create release ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Copy-Item bin/Release/net481/DataToolGUI.exe release/DataToolGUI.exe
+          Copy-Item bin/Release/net481/DataTool.exe release/DataTool.exe
+          Compress-Archive -Path release/* -DestinationPath Tool.zip -Force
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:RELEASE_TAG
+          if (gh release view $tag 2>$null) {
+            $assets = gh release view $tag --json assets --jq '.assets[].name'
+            foreach ($asset in $assets) {
+              if ($asset -ne "Tool.zip") {
+                gh release delete-asset $tag $asset --yes
+              }
+            }
+            gh release upload $tag Tool.zip --clobber
+          } else {
+            gh release create $tag Tool.zip --title "PJDev Data Tool $tag" --generate-notes
+          }

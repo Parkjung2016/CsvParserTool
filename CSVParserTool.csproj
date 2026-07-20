@@ -32,6 +32,13 @@
 
 	<ItemGroup>
 
+		<Reference Include="PresentationFramework" />
+
+		<Reference Include="System.Net.Http" />
+		<Reference Include="System.IO.Compression" />
+		<Reference Include="System.IO.Compression.FileSystem" />
+		<Reference Include="System.Runtime.Serialization" />
+
 		<ProjectReference Include="DataTool.Core\DataTool.Core.csproj" />
 
 	</ItemGroup>
@@ -40,10 +47,10 @@
 
 	<ItemGroup>
 
-		<PackageReference Include="WindowsAPICodePack" Version="8.0.14" />
+		<PackageReference Include="WindowsAPICodePack" Version="8.0.15.2" />
 
-		<PackageReference Include="Fody" Version="6.8.2" PrivateAssets="all" />
-		<PackageReference Include="Costura.Fody" Version="6.0.0" PrivateAssets="all" />
+		<PackageReference Include="Fody" Version="6.9.3" PrivateAssets="all" />
+		<PackageReference Include="Costura.Fody" Version="6.2.0" PrivateAssets="all" />
 
 	</ItemGroup>
 

@@ -153,8 +153,20 @@ public static class CsvClassGenerator
             string field = CsvTableParser.SanitizeIdentifier(table.Headers[i]);
             string type = table.ColumnTypes[i];
 
+            CsvColumnReference reference = table.ColumnReferences[i];
+            if (reference != null)
+                sb.AppendLine($"        /// <summary>{reference.TableName}.{reference.ColumnName} {(reference.IsArray ? "여러 값 참조" : "참조")}</summary>");
+
             sb.AppendLine($"        [Key({i})]");
-            sb.AppendLine($"        public {type} {field} {{ get; set; }}");
+            if (CsvColumnTypes.TryGetArrayElementType(type, out string elementType))
+            {
+                sb.AppendLine($"        [TypeConverter(typeof(PipeSeparatedArrayConverter<{elementType}>))]");
+                sb.AppendLine($"        public {type} {field} {{ get; set; }} = System.Array.Empty<{elementType}>();");
+            }
+            else
+            {
+                sb.AppendLine($"        public {type} {field} {{ get; set; }}");
+            }
         }
 
         sb.AppendLine("    }");

@@ -1,14 +1,16 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.WindowsAPICodePack.Dialogs;
+using Microsoft.WindowsAPICodePack.Taskbar;
 
 namespace CSVParserTool
 {
@@ -24,7 +26,21 @@ namespace CSVParserTool
     public partial class Form1 : Form
     {
         private const int maxLogLines = 300;
+        private readonly Button Btn_Info = new Button();
+        private readonly Button Btn_Version = new Button();
+        private readonly Button Btn_ExportSelected = new Button();
+        private readonly Button Btn_EnumCatalog = new Button();
+        private readonly Button Btn_CheckAll = new Button();
+        private readonly Button Btn_UncheckAll = new Button();
 
+        private readonly HashSet<string> checkedXlsxPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private bool allowCheckStateChange;
+        private Icon taskbarExportStatusIcon;
+        private NotifyIcon exportNotifyIcon;
+        private System.Windows.Forms.Timer exportNotificationHideTimer;
+        private System.Windows.Forms.Timer exportCompletionAnimationTimer;
+        private int exportCompletionAnimationFrame;
+        private Color exportCompletionAnimationStartColor;
         private string projectRootPath = "";
         private string excelSourceFolderPath = "";
         private string exportVersion = "1.0.0";
@@ -67,6 +83,7 @@ namespace CSVParserTool
         public Form1()
         {
             InitializeComponent();
+            InitializeInfoButton();
 
             bool darkMode = Properties.Settings.Default.DarkMode;
             UiTheme.SetDarkMode(darkMode);
@@ -74,6 +91,142 @@ namespace CSVParserTool
 
             ApplyUiTheme();
             ApplyAppIcon();
+        }
+
+        private void InitializeInfoButton()
+        {
+            tableHeader.ColumnCount = 7;
+            tableHeader.ColumnStyles.Add(new ColumnStyle());
+            tableHeader.ColumnStyles.Add(new ColumnStyle());
+            tableHeader.ColumnStyles.Add(new ColumnStyle());
+            tableHeader.SetColumn(Chk_DarkMode, 4);
+            tableHeader.SetColumn(Btn_DataSetting, 6);
+            Btn_DataSetting.Text = "전체 Export";
+
+            Btn_Version.Name = "Btn_Version";
+            Btn_Version.Text = "버전";
+            Btn_Version.AccessibleName = "툴 버전 및 업데이트 정보";
+            Btn_Version.Anchor = AnchorStyles.Right;
+            Btn_Version.AutoSize = true;
+            Btn_Version.Margin = new Padding(0, 0, 8, 0);
+            Btn_Version.TabIndex = 2;
+            Btn_Version.Click += Btn_Version_Click;
+            tableHeader.Controls.Add(Btn_Version, 2, 0);
+            tableHeader.SetRowSpan(Btn_Version, 2);
+
+            Btn_Info.Name = "Btn_Info";
+            Btn_Info.Text = "i";
+            Btn_Info.AccessibleName = "사용 안내";
+            Btn_Info.Anchor = AnchorStyles.Right;
+            Btn_Info.Margin = new Padding(0, 0, 12, 0);
+            Btn_Info.TabIndex = 2;
+            Btn_Info.Click += Btn_Info_Click;
+            tableHeader.Controls.Add(Btn_Info, 3, 0);
+            tableHeader.SetRowSpan(Btn_Info, 2);
+
+            Btn_ExportSelected.Name = "Btn_ExportSelected";
+            Btn_ExportSelected.Text = "선택 Export";
+            Btn_ExportSelected.AccessibleName = "체크한 테이블만 Export";
+            Btn_ExportSelected.Anchor = AnchorStyles.Right;
+            Btn_ExportSelected.AutoSize = true;
+            Btn_ExportSelected.Margin = new Padding(0, 0, 8, 0);
+            Btn_ExportSelected.TabIndex = 3;
+            Btn_ExportSelected.Click += Btn_ExportSelected_Click;
+            tableHeader.Controls.Add(Btn_ExportSelected, 5, 0);
+            tableHeader.SetRowSpan(Btn_ExportSelected, 2);
+
+            var listHeaderLayout = new TableLayoutPanel
+            {
+                Name = "Table_ListHeaderActions",
+                ColumnCount = 3,
+                RowCount = 2,
+                Dock = DockStyle.Fill,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
+            };
+            listHeaderLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            listHeaderLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            listHeaderLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            listHeaderLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+            listHeaderLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+
+            var selectionLayout = new TableLayoutPanel
+            {
+                Name = "Table_ListSelectionActions",
+                ColumnCount = 2,
+                RowCount = 1,
+                Dock = DockStyle.Fill,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
+            };
+            selectionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            selectionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            selectionLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            Btn_EnumCatalog.Name = "Btn_EnumCatalog";
+            Btn_EnumCatalog.Text = "Enum XLSX";
+            Btn_EnumCatalog.AccessibleName = "Enum 관리 XLSX 생성 또는 열기";
+            Btn_EnumCatalog.AutoSize = true;
+            Btn_EnumCatalog.Dock = DockStyle.Fill;
+            Btn_EnumCatalog.Margin = new Padding(0, 0, 4, 0);
+            Btn_EnumCatalog.Padding = new Padding(6, 2, 6, 2);
+            Btn_EnumCatalog.TabIndex = 1;
+            Btn_EnumCatalog.Click += Btn_EnumCatalog_Click;
+
+            Btn_CheckAll.Name = "Btn_CheckAll";
+            Btn_CheckAll.Text = "\uC804\uCCB4 \uC120\uD0DD";
+            Btn_CheckAll.AccessibleName = "\uBAA8\uB4E0 \uD14C\uC774\uBE14 \uCCB4\uD06C";
+            Btn_CheckAll.Dock = DockStyle.Fill;
+            Btn_CheckAll.Margin = new Padding(0, 4, 4, 0);
+            Btn_CheckAll.TabIndex = 2;
+            Btn_CheckAll.Click += Btn_CheckAll_Click;
+
+            Btn_UncheckAll.Name = "Btn_UncheckAll";
+            Btn_UncheckAll.Text = "\uC804\uCCB4 \uD574\uC81C";
+            Btn_UncheckAll.AccessibleName = "\uBAA8\uB4E0 \uD14C\uC774\uBE14 \uCCB4\uD06C \uD574\uC81C";
+            Btn_UncheckAll.Dock = DockStyle.Fill;
+            Btn_UncheckAll.Margin = new Padding(0, 4, 0, 0);
+            Btn_UncheckAll.TabIndex = 3;
+            Btn_UncheckAll.Click += Btn_UncheckAll_Click;
+            ListBox_CsvFiles.MouseUp += ListBox_CsvFiles_MouseUp;
+
+            Panel_ListHeader.Height = 80;
+            Label_SectionList.Dock = DockStyle.Fill;
+            Label_SectionList.Padding = new Padding(2, 0, 0, 0);
+            Panel_ListHeader.Controls.Remove(Btn_RefreshList);
+            Panel_ListHeader.Controls.Remove(Label_SectionList);
+            Btn_RefreshList.Margin = Padding.Empty;
+            Btn_RefreshList.Dock = DockStyle.Fill;
+            listHeaderLayout.Controls.Add(Label_SectionList, 0, 0);
+            listHeaderLayout.Controls.Add(Btn_EnumCatalog, 1, 0);
+            listHeaderLayout.Controls.Add(Btn_RefreshList, 2, 0);
+            selectionLayout.Controls.Add(Btn_CheckAll, 0, 0);
+            selectionLayout.Controls.Add(Btn_UncheckAll, 1, 0);
+            listHeaderLayout.Controls.Add(selectionLayout, 0, 1);
+            listHeaderLayout.SetColumnSpan(selectionLayout, 3);
+            Panel_ListHeader.Controls.Add(listHeaderLayout);
+            Activated += Form1_Activated;
+            FormClosed += Form1_FormClosed;
+        }
+
+        private void Btn_Version_Click(object sender, EventArgs e)
+        {
+            using (var dialog = new ToolVersionForm())
+            {
+                if (Icon != null)
+                    dialog.Icon = (Icon)Icon.Clone();
+                dialog.ShowDialog(this);
+            }
+        }
+
+        private void Btn_Info_Click(object sender, EventArgs e)
+        {
+            using (var dialog = new ToolInfoForm())
+            {
+                if (Icon != null)
+                    dialog.Icon = (Icon)Icon.Clone();
+                dialog.ShowDialog(this);
+            }
         }
 
         private void ApplyAppIcon()
@@ -197,6 +350,16 @@ namespace CSVParserTool
             Panel_LogHeader.BackColor = UiTheme.LogHeaderBackground;
 
             UiTheme.StylePrimaryButton(Btn_DataSetting, tall: true);
+            UiTheme.StyleSecondaryButton(Btn_ExportSelected);
+            UiTheme.StyleSecondaryButton(Btn_EnumCatalog);
+            UiTheme.StyleSecondaryButton(Btn_Info);
+            UiTheme.StyleSecondaryButton(Btn_Version);
+            Btn_Info.Font = new Font("Segoe UI Semibold", 11F, FontStyle.Regular, GraphicsUnit.Point);
+            Btn_Info.Padding = Padding.Empty;
+            Btn_Info.MinimumSize = new Size(34, 34);
+            UiTheme.StyleSecondaryButton(Btn_CheckAll);
+            UiTheme.StyleSecondaryButton(Btn_UncheckAll);
+            Btn_Info.Size = new Size(34, 34);
             UiTheme.StyleSecondaryButton(Btn_SelectProjectRoot);
             UiTheme.StyleSecondaryButton(Btn_SelectExcelFolder);
             UiTheme.StyleSecondaryButton(Btn_OpenOutputFolder);
@@ -236,6 +399,253 @@ namespace CSVParserTool
             Panel_MainContent.BackColor = UiTheme.AppBackground;
         }
 
+        private void StartExportCompletionAnimation(bool success)
+        {
+            StopExportCompletionAnimation(resetColors: true);
+            if (!SystemInformation.IsMenuAnimationEnabled)
+                return;
+
+            exportCompletionAnimationFrame = 0;
+            exportCompletionAnimationStartColor = BlendColor(
+                UiTheme.SurfaceMuted,
+                success ? UiTheme.LogSuccess : UiTheme.LogError,
+                0.42D);
+            ApplyExportCompletionAnimationColor(exportCompletionAnimationStartColor);
+            if (exportCompletionAnimationTimer == null)
+            {
+                exportCompletionAnimationTimer = new System.Windows.Forms.Timer { Interval = 30 };
+                exportCompletionAnimationTimer.Tick += (_, __) => AdvanceExportCompletionAnimation();
+            }
+            exportCompletionAnimationTimer.Start();
+        }
+
+        private void AdvanceExportCompletionAnimation()
+        {
+            exportCompletionAnimationFrame++;
+            double progress = Math.Min(1D, exportCompletionAnimationFrame / 18D);
+            double eased = 1D - Math.Pow(1D - progress, 3D);
+            ApplyExportCompletionAnimationColor(BlendColor(
+                exportCompletionAnimationStartColor,
+                UiTheme.SurfaceMuted,
+                eased));
+            if (progress >= 1D)
+                StopExportCompletionAnimation(resetColors: true);
+        }
+
+        private void StopExportCompletionAnimation(bool resetColors)
+        {
+            exportCompletionAnimationTimer?.Stop();
+            if (resetColors)
+                ApplyExportCompletionAnimationColor(UiTheme.SurfaceMuted);
+        }
+
+        private void ApplyExportCompletionAnimationColor(Color color)
+        {
+            Panel_ExportProgressTop.BackColor = color;
+            Label_ExportStatus.BackColor = color;
+            SegmentedExportProgress_Export.BackColor = color;
+            Panel_ExportProgressTop.Invalidate();
+        }
+
+        private static Color BlendColor(Color from, Color to, double amount)
+        {
+            amount = Math.Max(0D, Math.Min(1D, amount));
+            return Color.FromArgb(
+                (int)Math.Round(from.A + (to.A - from.A) * amount),
+                (int)Math.Round(from.R + (to.R - from.R) * amount),
+                (int)Math.Round(from.G + (to.G - from.G) * amount),
+                (int)Math.Round(from.B + (to.B - from.B) * amount));
+        }
+        private void ShowExportTaskbarNotification(bool success)
+        {
+            if (!IsHandleCreated || (ContainsFocus && WindowState != FormWindowState.Minimized))
+                return;
+
+            ClearExportTaskbarNotification();
+            try
+            {
+                taskbarExportStatusIcon = CreateTaskbarStatusIcon(success);
+                if (TaskbarManager.IsPlatformSupported)
+                {
+                    TaskbarManager.Instance.SetOverlayIcon(
+                        Handle,
+                        taskbarExportStatusIcon,
+                        success ? "Export 완료" : "Export 실패");
+                    TaskbarManager.Instance.SetProgressState(
+                        success ? TaskbarProgressBarState.Normal : TaskbarProgressBarState.Error,
+                        Handle);
+                    TaskbarManager.Instance.SetProgressValue(100, 100, Handle);
+                }
+
+                FlashTaskbar(stop: false);
+            }
+            catch
+            {
+                // 작업 표시줄 기능을 지원하지 않는 환경에서도 Export 결과에는 영향이 없어야 한다.
+            }
+
+            ShowExportWindowsNotification(success);
+        }
+        private void ClearExportTaskbarNotification()
+        {
+            try
+            {
+                if (IsHandleCreated && TaskbarManager.IsPlatformSupported)
+                {
+                    TaskbarManager.Instance.SetOverlayIcon(Handle, null, null);
+                    TaskbarManager.Instance.SetProgressState(TaskbarProgressBarState.NoProgress, Handle);
+                }
+            }
+            catch
+            {
+                // Explorer 재시작 등으로 작업 표시줄 핸들이 바뀐 경우 무시한다.
+            }
+
+            FlashTaskbar(stop: true);
+            taskbarExportStatusIcon?.Dispose();
+            taskbarExportStatusIcon = null;
+            HideExportWindowsNotification();
+        }
+
+        private void ShowExportWindowsNotification(bool success)
+        {
+            try
+            {
+                if (exportNotifyIcon == null)
+                {
+                    exportNotifyIcon = new NotifyIcon
+                    {
+                        Text = "PJDev Data Tool",
+                        Icon = Icon ?? SystemIcons.Application
+                    };
+                    exportNotifyIcon.BalloonTipClicked += (_, __) => RestoreFromExportNotification();
+                    exportNotifyIcon.Click += (_, __) => RestoreFromExportNotification();
+                }
+
+                exportNotifyIcon.Visible = true;
+                exportNotifyIcon.ShowBalloonTip(
+                    5000,
+                    success ? "Data Export 완료" : "Data Export 실패",
+                    success
+                        ? "데이터 Export가 완료되었습니다."
+                        : "Data Tool에서 실패 내용을 확인하세요.",
+                    success ? ToolTipIcon.Info : ToolTipIcon.Error);
+
+                if (exportNotificationHideTimer == null)
+                {
+                    exportNotificationHideTimer = new System.Windows.Forms.Timer { Interval = 10000 };
+                    exportNotificationHideTimer.Tick += (_, __) => HideExportWindowsNotification();
+                }
+                exportNotificationHideTimer.Stop();
+                exportNotificationHideTimer.Start();
+            }
+            catch
+            {
+                // Windows 알림이 꺼져 있거나 Explorer가 재시작 중인 경우 무시한다.
+            }
+        }
+
+        private void HideExportWindowsNotification()
+        {
+            exportNotificationHideTimer?.Stop();
+            if (exportNotifyIcon != null)
+                exportNotifyIcon.Visible = false;
+        }
+
+        private void RestoreFromExportNotification()
+        {
+            if (WindowState == FormWindowState.Minimized)
+                WindowState = FormWindowState.Normal;
+            Show();
+            Activate();
+            BringToFront();
+        }
+        private static Icon CreateTaskbarStatusIcon(bool success)
+        {
+            using (var bitmap = new Bitmap(32, 32))
+            using (Graphics graphics = Graphics.FromImage(bitmap))
+            using (var font = new Font("Segoe UI Symbol", success ? 18F : 20F, FontStyle.Bold, GraphicsUnit.Pixel))
+            using (var brush = new SolidBrush(Color.White))
+            using (var format = new StringFormat
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center
+            })
+            {
+                graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                graphics.Clear(Color.Transparent);
+                using (var background = new SolidBrush(success
+                    ? Color.FromArgb(46, 125, 50)
+                    : Color.FromArgb(198, 40, 40)))
+                {
+                    graphics.FillEllipse(background, 1, 1, 30, 30);
+                }
+
+                graphics.DrawString(success ? "\u2713" : "!", font, brush, new RectangleF(0, -1, 32, 33), format);
+                IntPtr iconHandle = bitmap.GetHicon();
+                try
+                {
+                    using (Icon borrowed = Icon.FromHandle(iconHandle))
+                        return (Icon)borrowed.Clone();
+                }
+                finally
+                {
+                    DestroyIcon(iconHandle);
+                }
+            }
+        }
+
+        private void Form1_Activated(object sender, EventArgs e) =>
+            ClearExportTaskbarNotification();
+
+        private void Form1_FormClosed(object sender, FormClosedEventArgs e)
+        {
+            ClearExportTaskbarNotification();
+            exportNotificationHideTimer?.Dispose();
+            exportNotificationHideTimer = null;
+            exportCompletionAnimationTimer?.Dispose();
+            exportCompletionAnimationTimer = null;
+            exportNotifyIcon?.Dispose();
+            exportNotifyIcon = null;
+        }
+
+        private void FlashTaskbar(bool stop)
+        {
+            if (!IsHandleCreated)
+                return;
+
+            var info = new FlashWindowInfo
+            {
+                Size = (uint)Marshal.SizeOf(typeof(FlashWindowInfo)),
+                WindowHandle = Handle,
+                Flags = stop ? FlashWindowStop : FlashWindowTray | FlashWindowTimerNoForeground,
+                Count = stop ? 0U : 3U,
+                Timeout = 0U
+            };
+            FlashWindowEx(ref info);
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FlashWindowInfo
+        {
+            public uint Size;
+            public IntPtr WindowHandle;
+            public uint Flags;
+            public uint Count;
+            public uint Timeout;
+        }
+
+        private const uint FlashWindowStop = 0;
+        private const uint FlashWindowTray = 0x00000002;
+        private const uint FlashWindowTimerNoForeground = 0x0000000C;
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool FlashWindowEx(ref FlashWindowInfo info);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DestroyIcon(IntPtr iconHandle);
         private void Form1_Shown(object sender, EventArgs e)
         {
             if (!splitContainersInitialized)
@@ -254,7 +664,7 @@ namespace CSVParserTool
             if (!IsHandleCreated || splitOuter.Width <= 0 || splitWork.Width <= 0)
                 return;
 
-            const int sidebarWidth = 288;
+            const int sidebarWidth = 340;
             int maxList = splitWork.Width - splitWork.Panel2MinSize - splitWork.SplitterWidth;
             int listDist = Math.Max(splitWork.Panel1MinSize, Math.Min(sidebarWidth, maxList));
             if (listDist > 0)
@@ -299,6 +709,28 @@ namespace CSVParserTool
         // =========================
         private async void Btn_DataSetting_Click(object sender, EventArgs e)
         {
+            await RunDataExportAsync(null);
+        }
+
+        private async void Btn_ExportSelected_Click(object sender, EventArgs e)
+        {
+            string[] selectedStems = GetCheckedTableStems();
+            if (selectedStems.Length == 0)
+            {
+                MessageBox.Show(
+                    "테이블 목록 왼쪽에서 Export할 항목을 먼저 체크하세요.",
+                    "선택 Export",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            await RunDataExportAsync(selectedStems);
+        }
+
+        private async Task RunDataExportAsync(IReadOnlyCollection<string> selectedTableStems)
+        {
+            bool selectedOnly = selectedTableStems != null;
             bool refresh = !string.IsNullOrWhiteSpace(excelSourceFolderPath) && Directory.Exists(excelSourceFolderPath);
             if (refresh && (string.IsNullOrWhiteSpace(projectRootPath) || !Directory.Exists(projectRootPath)))
             {
@@ -325,11 +757,13 @@ namespace CSVParserTool
             }
 
             Btn_DataSetting.Enabled = false;
+            Btn_ExportSelected.Enabled = false;
             try
             {
                 SaveExportVersionSetting();
                 BeginExportProgressUi();
-                AddLog($"데이터 Export 시작… (버전 {exportVersion}, 고아 정리 {(Chk_RemoveOrphanArtifacts.Checked ? "ON" : "OFF")})", LogLevel.Info);
+                string targetText = selectedOnly ? $"선택 {selectedTableStems.Count}개" : "전체";
+                AddLog($"데이터 Export 시작… ({targetText}, 버전 {exportVersion}, 원본 없는 이전 파일 삭제 {(Chk_RemoveOrphanArtifacts.Checked ? "ON" : "OFF")})", LogLevel.Info);
 
                 DataExportResult result = await Task.Run(() => DataExportService.RunExport(
                     projectRootPath,
@@ -338,7 +772,8 @@ namespace CSVParserTool
                     ExportLog,
                     ReportExportProgress,
                     exportVersion: exportVersion,
-                    removeOrphanArtifacts: Chk_RemoveOrphanArtifacts.Checked));
+                    removeOrphanArtifacts: Chk_RemoveOrphanArtifacts.Checked,
+                    selectedTableStems: selectedTableStems));
 
                 FinishExportProgressUi(result);
 
@@ -361,11 +796,14 @@ namespace CSVParserTool
             finally
             {
                 Btn_DataSetting.Enabled = true;
+                Btn_ExportSelected.Enabled = true;
             }
         }
 
         private void BeginExportProgressUi()
         {
+            ClearExportTaskbarNotification();
+            StopExportCompletionAnimation(resetColors: true);
             exportResultItems.Clear();
             ListView_ExportResults.Items.Clear();
             Panel_ExportProgress.Visible = true;
@@ -387,6 +825,8 @@ namespace CSVParserTool
                 Label_ExportStatus.Text = "Export 중단";
                 if (exportActivePhaseIndex >= 0)
                     SetExportStep(exportActivePhaseIndex, SegmentedPhaseState.Failed);
+                StartExportCompletionAnimation(success: false);
+                ShowExportTaskbarNotification(success: false);
                 return;
             }
 
@@ -436,6 +876,9 @@ namespace CSVParserTool
             if (result.FailedCount > 0)
                 Combo_LogFilter.SelectedItem = "Error";
             LayoutSplitContainers();
+            bool exportSucceeded = result.Ok && result.FailedCount == 0;
+            StartExportCompletionAnimation(exportSucceeded);
+            ShowExportTaskbarNotification(exportSucceeded);
         }
 
         private void ReportExportProgress(DataExportProgressInfo info)
@@ -718,16 +1161,50 @@ namespace CSVParserTool
         private void RefreshListBoxFromFilter()
         {
             string filter = Txt_CsvFilter.Text.Trim().ToLowerInvariant();
+            checkedXlsxPaths.RemoveWhere(path => !File.Exists(path));
 
+            allowCheckStateChange = true;
             ListBox_CsvFiles.BeginUpdate();
-            ListBox_CsvFiles.Items.Clear();
-            foreach (var entry in allListEntries)
+            try
             {
-                if (filter.Length == 0 || entry.DisplayName.ToLowerInvariant().Contains(filter))
-                    ListBox_CsvFiles.Items.Add(entry.DisplayName);
+                ListBox_CsvFiles.Items.Clear();
+                foreach (var entry in allListEntries)
+                {
+                    if (filter.Length == 0 || entry.DisplayName.ToLowerInvariant().Contains(filter))
+                    {
+                        int index = ListBox_CsvFiles.Items.Add(entry.DisplayName);
+                        if (checkedXlsxPaths.Contains(entry.FullPath))
+                            ListBox_CsvFiles.SetItemChecked(index, true);
+                    }
+                }
             }
+            finally
+            {
+                ListBox_CsvFiles.EndUpdate();
+                allowCheckStateChange = false;
+            }
+        }
+        private string[] GetCheckedTableStems() =>
+            checkedXlsxPaths
+                .Where(File.Exists)
+                .Select(Path.GetFileNameWithoutExtension)
+                .Where(stem => !string.IsNullOrWhiteSpace(stem))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(stem => stem, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
 
-            ListBox_CsvFiles.EndUpdate();
+        private void Btn_CheckAll_Click(object sender, EventArgs e)
+        {
+            foreach (FileListEntry entry in allListEntries)
+                checkedXlsxPaths.Add(entry.FullPath);
+
+            RefreshListBoxFromFilter();
+        }
+
+        private void Btn_UncheckAll_Click(object sender, EventArgs e)
+        {
+            checkedXlsxPaths.Clear();
+            RefreshListBoxFromFilter();
         }
 
         /// <param name="quietLog">파일 감시 등으로 잦이 갱신될 때 로그 생략</param>
@@ -908,6 +1385,53 @@ namespace CSVParserTool
         // =========================
         // XLSX 목록 선택
         // =========================
+        private void ListBox_CsvFiles_MouseUp(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left)
+                return;
+
+            int index = ListBox_CsvFiles.IndexFromPoint(e.Location);
+            if (index == ListBox.NoMatches || index < 0 || index >= ListBox_CsvFiles.Items.Count)
+                return;
+
+            Rectangle itemBounds = ListBox_CsvFiles.GetItemRectangle(index);
+            int checkRight = itemBounds.Left + SystemInformation.MenuCheckSize.Width + 6;
+            if (e.X < itemBounds.Left || e.X > checkRight)
+                return;
+
+            allowCheckStateChange = true;
+            try
+            {
+                ListBox_CsvFiles.SetItemChecked(index, !ListBox_CsvFiles.GetItemChecked(index));
+            }
+            finally
+            {
+                allowCheckStateChange = false;
+            }
+        }
+
+        private void ListBox_CsvFiles_ItemCheck(object sender, ItemCheckEventArgs e)
+        {
+            if (!allowCheckStateChange)
+            {
+                e.NewValue = e.CurrentValue;
+                return;
+            }
+
+            if (e.Index < 0 || e.Index >= ListBox_CsvFiles.Items.Count)
+                return;
+
+            string displayName = ListBox_CsvFiles.Items[e.Index]?.ToString();
+            FileListEntry entry = allListEntries.FirstOrDefault(item =>
+                string.Equals(item.DisplayName, displayName, StringComparison.OrdinalIgnoreCase));
+            if (entry == null)
+                return;
+
+            if (e.NewValue == CheckState.Checked)
+                checkedXlsxPaths.Add(entry.FullPath);
+            else
+                checkedXlsxPaths.Remove(entry.FullPath);
+        }
         private void ListBox_CsvFiles_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (ListBox_CsvFiles.SelectedItem == null) return;
@@ -917,10 +1441,47 @@ namespace CSVParserTool
             if (entry == null) return;
 
             currentSelectedXlsxPath = entry.FullPath;
+            TryRefreshXlsxTypeValidation(entry.FullPath);
             RefreshPreviewFromXlsx(entry.FullPath);
             AddLog($"XLSX 선택: {entry.DisplayName}", LogLevel.Info);
         }
 
+        private void TryRefreshXlsxTypeValidation(string xlsxPath)
+        {
+            if (EnumCatalogService.IsCatalogPath(xlsxPath))
+                return;
+
+            FileSystemWatcher watcher = excelDirWatcher;
+            bool resumeWatcher = watcher != null && watcher.EnableRaisingEvents;
+            try
+            {
+                if (resumeWatcher)
+                    watcher.EnableRaisingEvents = false;
+
+                if (XlsxTemplateCreator.RefreshTypeValidationFormula(xlsxPath))
+                    AddLog($"XLSX 타입 표시 규칙 업데이트됨: {Path.GetFileName(xlsxPath)}", LogLevel.Info);
+            }
+            catch (IOException)
+            {
+                // Excel에서 열려 있는 파일은 건드리지 않고 다음 선택 때 다시 시도한다.
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // 읽기 전용 또는 잠긴 파일은 자동 보정을 조용히 건너뛴다.
+            }
+            catch (Exception ex)
+            {
+                AddLog($"XLSX 타입 표시 규칙 확인 실패: {ex.Message}", LogLevel.Warning);
+            }
+            finally
+            {
+                if (resumeWatcher && ReferenceEquals(excelDirWatcher, watcher))
+                {
+                    try { watcher.EnableRaisingEvents = true; }
+                    catch (ObjectDisposedException) { }
+                }
+            }
+        }
         private void ListBox_CsvFiles_MouseDoubleClick(object sender, MouseEventArgs e)
         {
             int idx = ListBox_CsvFiles.IndexFromPoint(e.Location);
@@ -938,6 +1499,7 @@ namespace CSVParserTool
             try
             {
                 ListBox_CsvFiles.SelectedIndex = idx;
+                TryRefreshXlsxTypeValidation(entry.FullPath);
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = entry.FullPath,
@@ -999,6 +1561,7 @@ namespace CSVParserTool
             {
                 try
                 {
+                    checkedXlsxPaths.Remove(entry.FullPath);
                     File.Delete(entry.FullPath);
                     AddLog($"XLSX 삭제됨: {entry.DisplayName}", LogLevel.Info);
 
@@ -1037,7 +1600,12 @@ namespace CSVParserTool
             try
             {
                 string preview = await Task.Run(() =>
-                    CsvClassGenerator.GeneratePreviewFromXlsxFast(xlsxPath, maxRows: 64, exportVersion: exportVersion));
+                    EnumCatalogService.IsCatalogPath(xlsxPath)
+                        ? EnumCatalogService.GenerateSource(EnumCatalogService.ParseXlsx(xlsxPath))
+                        : CsvClassGenerator.GeneratePreviewFromXlsxFast(
+                            xlsxPath,
+                            maxRows: 64,
+                            exportVersion: exportVersion));
                 if (version != previewRequestVersion)
                     return;
                 SetPreviewCode(preview);
@@ -1251,6 +1819,41 @@ namespace CSVParserTool
         private void Btn_OpenXlsxFolder_Click(object sender, EventArgs e)
         {
             TryOpenFolderInExplorer(excelSourceFolderPath, "XLSX 원본 폴더", (m, l) => AddLog(m, l));
+        }
+
+        private void Btn_EnumCatalog_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(excelSourceFolderPath) || !Directory.Exists(excelSourceFolderPath))
+            {
+                MessageBox.Show(
+                    "먼저 XLSX 원본 폴더를 지정하세요.",
+                    "Enum XLSX",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            string path = Path.Combine(excelSourceFolderPath, EnumCatalogService.WorkbookFileName);
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    XlsxTemplateCreator.CreateEnumCatalog(path);
+                    AddLog($"Enum 관리 XLSX 생성됨: {EnumCatalogService.WorkbookFileName}", LogLevel.Info);
+                    ReloadDataFileList(quietLog: true);
+                }
+
+                ListBox_CsvFiles.SelectedItem = EnumCatalogService.WorkbookFileName;
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = path,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                AddLog($"Enum 관리 XLSX 열기 실패: {ex.Message}", LogLevel.Error);
+            }
         }
 
         private void Btn_NewCsv_Click(object sender, EventArgs e)

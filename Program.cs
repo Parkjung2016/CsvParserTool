@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows.Forms;
 
 namespace CSVParserTool
@@ -9,9 +9,12 @@ namespace CSVParserTool
         /// The main entry point for the application.
         /// </summary>
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
             NetFxAssemblyLoadFix.Register();
+
+            if (ToolUpdateService.TryRunInstallerMode(args))
+                return;
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);

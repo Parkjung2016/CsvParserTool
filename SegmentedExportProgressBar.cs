@@ -24,6 +24,7 @@ namespace CSVParserTool
 
         private readonly SegmentedPhaseState[] _states = new SegmentedPhaseState[PhaseCount];
         private readonly float[] _progress = new float[PhaseCount];
+        private readonly float[] _displayProgress = new float[PhaseCount];
         private readonly string[] _captions =
         {
             "Excel → CSV",
@@ -58,6 +59,7 @@ namespace CSVParserTool
             {
                 _states[i] = SegmentedPhaseState.Pending;
                 _progress[i] = 0f;
+                _displayProgress[i] = 0f;
             }
 
             _captions[0] = "Excel → CSV";
@@ -184,32 +186,62 @@ namespace CSVParserTool
 
         private void MarqueeTimer_Tick(object sender, EventArgs e)
         {
-            _marqueeOffset = (_marqueeOffset + 6) % 400;
+            _marqueeOffset = (_marqueeOffset + 7) % 400;
+            bool progressChanged = false;
+            for (int i = 0; i < PhaseCount; i++)
+            {
+                float delta = _progress[i] - _displayProgress[i];
+                if (Math.Abs(delta) <= 0.002f)
+                {
+                    _displayProgress[i] = _progress[i];
+                    continue;
+                }
+
+                _displayProgress[i] += delta * 0.24f;
+                progressChanged = true;
+            }
+
             Invalidate();
+            if (!progressChanged && !HasRunningPhase())
+                _marqueeTimer.Stop();
         }
 
         private void UpdateMarqueeTimer()
         {
-            bool needMarquee = false;
-            for (int i = 0; i < PhaseCount; i++)
+            if (!SystemInformation.IsMenuAnimationEnabled)
             {
-                if (_states[i] != SegmentedPhaseState.Running)
-                    continue;
-
-                if (i == 1)
-                    continue;
-
-                needMarquee = true;
-                break;
+                for (int i = 0; i < PhaseCount; i++)
+                    _displayProgress[i] = _progress[i];
+                _marqueeTimer.Stop();
+                return;
             }
 
-            _marqueeTimer.Enabled = needMarquee;
+            bool progressPending = false;
+            for (int i = 0; i < PhaseCount; i++)
+            {
+                if (Math.Abs(_progress[i] - _displayProgress[i]) > 0.002f)
+                {
+                    progressPending = true;
+                    break;
+                }
+            }
+
+            _marqueeTimer.Enabled = HasRunningPhase() || progressPending;
         }
 
+        private bool HasRunningPhase()
+        {
+            for (int i = 0; i < PhaseCount; i++)
+            {
+                if (_states[i] == SegmentedPhaseState.Running)
+                    return true;
+            }
+            return false;
+        }
         private void DrawSegmentFill(Graphics g, Rectangle segmentRect, int phaseIndex)
         {
             SegmentedPhaseState state = _states[phaseIndex];
-            float progress = _progress[phaseIndex];
+            float progress = _displayProgress[phaseIndex];
             Rectangle inner = Rectangle.Inflate(segmentRect, -1, -1);
             if (inner.Width <= 0 || inner.Height <= 0)
                 return;
@@ -225,6 +257,7 @@ namespace CSVParserTool
                             var fillRect = new Rectangle(inner.X, inner.Y, fillWidth, inner.Height);
                             using (var brush = new SolidBrush(UiTheme.Accent))
                                 g.FillRectangle(brush, fillRect);
+                            DrawProgressShimmer(g, fillRect);
                         }
                     }
                     else
@@ -279,6 +312,43 @@ namespace CSVParserTool
             }
         }
 
+        private void DrawProgressShimmer(Graphics g, Rectangle fillRect)
+        {
+            if (!SystemInformation.IsMenuAnimationEnabled || fillRect.Width < 10)
+                return;
+
+            int shimmerWidth = Math.Max(22, Math.Min(72, fillRect.Width / 3));
+            int travel = fillRect.Width + shimmerWidth;
+            int x = fillRect.X + (int)((long)_marqueeOffset * travel / 400) - shimmerWidth;
+            var shimmerRect = new Rectangle(x, fillRect.Y, shimmerWidth, fillRect.Height);
+            GraphicsState state = g.Save();
+            try
+            {
+                g.SetClip(fillRect);
+                using (var brush = new LinearGradientBrush(
+                    shimmerRect,
+                    Color.FromArgb(0, Color.White),
+                    Color.FromArgb(0, Color.White),
+                    LinearGradientMode.Horizontal))
+                {
+                    brush.InterpolationColors = new ColorBlend
+                    {
+                        Colors = new[]
+                        {
+                            Color.FromArgb(0, Color.White),
+                            Color.FromArgb(95, Color.White),
+                            Color.FromArgb(0, Color.White)
+                        },
+                        Positions = new[] { 0f, 0.5f, 1f }
+                    };
+                    g.FillRectangle(brush, shimmerRect);
+                }
+            }
+            finally
+            {
+                g.Restore(state);
+            }
+        }
         private static Color LabelColorForState(SegmentedPhaseState state)
         {
             switch (state)

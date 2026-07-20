@@ -50,6 +50,46 @@ namespace CSVParserTool
             }
         }
 
+        public static void CreateEnumCatalog(string outputPath)
+        {
+            if (string.IsNullOrWhiteSpace(outputPath))
+                throw new ArgumentException("Output path is empty.", nameof(outputPath));
+
+            using (var workbook = new XLWorkbook())
+            {
+                IXLWorksheet sheet = workbook.Worksheets.Add("Enums");
+                sheet.Cell(1, 1).Value = "EnumName";
+                sheet.Cell(1, 2).Value = "Value";
+                sheet.Cell(1, 3).Value = "#설명";
+
+                IXLTable table = sheet.Range(1, 1, 12, 3).CreateTable("EnumCatalogTable");
+                table.ShowHeaderRow = true;
+                table.ShowAutoFilter = true;
+                table.Theme = XLTableTheme.TableStyleMedium2;
+
+                IXLRange header = sheet.Range(1, 1, 1, 3);
+                header.Style.Font.Bold = true;
+                header.Style.Font.FontColor = XLColor.White;
+                header.Style.Fill.BackgroundColor = XLColor.FromHtml("#4472C4");
+                header.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                header.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+
+                sheet.Column(1).Width = 24;
+                sheet.Column(2).Width = 24;
+                sheet.Column(3).Width = 36;
+                sheet.SheetView.FreezeRows(1);
+
+                sheet.Cell(1, 1).CreateComment().AddText("생성할 enum 타입 이름입니다. 같은 이름을 여러 행에 반복하면 값이 누적됩니다.");
+                sheet.Cell(1, 2).CreateComment().AddText("enum에 들어갈 값입니다. 예: Warrior, Mage");
+                sheet.Cell(1, 3).CreateComment().AddText("사람이 확인하기 위한 설명입니다. 생성 코드에는 포함되지 않습니다.");
+
+                string directory = Path.GetDirectoryName(outputPath);
+                if (!string.IsNullOrEmpty(directory))
+                    Directory.CreateDirectory(directory);
+                workbook.SaveAs(outputPath);
+            }
+        }
+
         private static void WriteSchema(IXLWorksheet ws)
         {
             ws.Cell(HeaderRow, NoteCol).Value = "#설명";
@@ -161,6 +201,69 @@ namespace CSVParserTool
         }
 
         /// <summary>expression CF XML 보정 — operator 제거, sqref를 버전·타입 행 전체 열로 확장.</summary>
+        public static bool RefreshTypeValidationFormula(string xlsxPath)
+        {
+            if (string.IsNullOrWhiteSpace(xlsxPath) || !File.Exists(xlsxPath))
+                return false;
+
+            byte[] originalBytes = File.ReadAllBytes(xlsxPath);
+            bool changed = false;
+            string expectedFormula = BuildTypeInvalidTableFormula();
+            using (var input = new MemoryStream(originalBytes))
+            using (var output = new MemoryStream())
+            {
+                using (var read = new ZipArchive(input, ZipArchiveMode.Read))
+                using (var write = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+                {
+                    foreach (ZipArchiveEntry entry in read.Entries)
+                    {
+                        ZipArchiveEntry destEntry = write.CreateEntry(entry.FullName, CompressionLevel.Optimal);
+                        using (Stream entryStream = entry.Open())
+                        using (Stream destStream = destEntry.Open())
+                        {
+                            if (!IsWorksheetXml(entry.FullName))
+                            {
+                                entryStream.CopyTo(destStream);
+                                continue;
+                            }
+
+                            string xml = new StreamReader(entryStream, Encoding.UTF8).ReadToEnd();
+                            string updated = Regex.Replace(
+                                xml,
+                                "(<(?:x:)?formula>)(.*?)(</(?:x:)?formula>)",
+                                match =>
+                                {
+                                    string decoded = System.Net.WebUtility.HtmlDecode(match.Groups[2].Value);
+                                    if (decoded.IndexOf($"ROW()={TypeRow}", StringComparison.OrdinalIgnoreCase) < 0
+                                        || decoded.IndexOf("INDIRECT(\"RC\",FALSE)", StringComparison.OrdinalIgnoreCase) < 0)
+                                    {
+                                        return match.Value;
+                                    }
+
+                                    string normalized = decoded.Trim();
+                                    if (normalized.StartsWith("=", StringComparison.Ordinal))
+                                        normalized = normalized.Substring(1).TrimStart();
+                                    if (string.Equals(normalized, expectedFormula, StringComparison.OrdinalIgnoreCase))
+                                        return match.Value;
+
+                                    changed = true;
+                                    string formula = System.Security.SecurityElement.Escape(expectedFormula);
+                                    return match.Groups[1].Value + formula + match.Groups[3].Value;
+                                },
+                                RegexOptions.CultureInvariant | RegexOptions.Singleline);
+                            byte[] utf8 = Encoding.UTF8.GetBytes(updated);
+                            destStream.Write(utf8, 0, utf8.Length);
+                        }
+                    }
+                }
+
+                if (!changed)
+                    return false;
+
+                File.WriteAllBytes(xlsxPath, output.ToArray());
+                return true;
+            }
+        }
         private static void RepairExpressionConditionalFormats(string xlsxPath, string tableName)
         {
             string cfSqref = BuildValidationConditionalFormatSqref(xlsxPath, tableName);
@@ -312,7 +415,7 @@ namespace CSVParserTool
             noteHeader.Style.Font.Bold = true;
             noteHeader.Style.Font.Italic = true;
             noteHeader.Style.Font.FontColor = ValidTextColor;
-            noteHeader.Style.Fill.BackgroundColor = XLColor.FromHtml("#E7E6E6");
+            noteHeader.Style.Fill.BackgroundColor = XLColor.Black;
             noteHeader.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
             var noteLabels = ws.Range(VersionRow, NoteCol, TypeRow, NoteCol);
@@ -336,32 +439,33 @@ namespace CSVParserTool
                    ")";
         }
 
-        /// <summary>타입 미입력·헤더 기준 허용 타입 불일치.</summary>
+        /// <summary>타입 미입력 또는 단일 타입 규칙 불일치.</summary>
         private static string BuildTypeInvalidFormula(string typeCellRef, string headerCellRef)
         {
             string trimmedType = $"TRIM({typeCellRef})";
-            string primitiveMismatch =
+            string baseType =
+                $"IF(RIGHT({trimmedType},2)=\"[]\"," +
+                $"LEFT({trimmedType},LEN({trimmedType})-2),{trimmedType})";
+            string typeMismatch =
                 "AND(" +
-                $"LOWER({trimmedType})<>\"bool\"," +
-                $"LOWER({trimmedType})<>\"uint\"," +
-                $"LOWER({trimmedType})<>\"int\"," +
-                $"LOWER({trimmedType})<>\"float\"," +
-                $"LOWER({trimmedType})<>\"double\"," +
-                $"LOWER({trimmedType})<>\"string\"," +
-                $"LOWER({trimmedType})<>\"str\"" +
+                $"LOWER({baseType})<>\"bool\"," +
+                $"LOWER({baseType})<>\"uint\"," +
+                $"LOWER({baseType})<>\"int\"," +
+                $"LOWER({baseType})<>\"float\"," +
+                $"LOWER({baseType})<>\"double\"," +
+                $"LOWER({baseType})<>\"string\"," +
+                $"LOWER({baseType})<>\"str\"," +
+                $"LOWER(LEFT({baseType},5))<>\"enum:\"," +
+                $"LOWER(LEFT({baseType},4))<>\"ref \"" +
                 ")";
 
             return "IF(LEFT(" + headerCellRef + ",1)=\"#\",FALSE," +
                    "OR(" +
                    "ISBLANK(" + typeCellRef + ")," +
                    "LEN(TRIM(" + typeCellRef + "))=0," +
-                   "IF(LEFT(" + headerCellRef + ",1)=\"E\"," +
-                   "AND(LOWER(" + trimmedType + ")<>LOWER(" + headerCellRef + "),LOWER(" + trimmedType + ")<>\"enum\")," +
-                   primitiveMismatch +
-                   ")" +
+                   typeMismatch +
                    "))";
         }
-
         private static string HasNonDigitOrDotCharacters(string cellRef)
         {
             string expr = cellRef;

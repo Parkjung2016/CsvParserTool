@@ -58,7 +58,8 @@ namespace CSVParserTool
             Action<string> log,
             Action<DataExportProgressInfo> progress = null,
             string exportVersion = null,
-            bool removeOrphanArtifacts = true)
+            bool removeOrphanArtifacts = true,
+            IReadOnlyCollection<string> selectedTableStems = null)
         {
             void Report(
                 DataExportProgressKind kind,
@@ -86,6 +87,17 @@ namespace CSVParserTool
             }
 
             bool hasXlsxSource = !string.IsNullOrWhiteSpace(excelSourceFolder) && Directory.Exists(excelSourceFolder);
+            HashSet<string> selectedStems = selectedTableStems == null
+                ? null
+                : new HashSet<string>(
+                    selectedTableStems
+                        .Where(stem => !string.IsNullOrWhiteSpace(stem))
+                        .Select(stem => Path.GetFileNameWithoutExtension(stem.Trim())),
+                    StringComparer.OrdinalIgnoreCase);
+            bool selectedOnly = selectedStems != null;
+            if (selectedOnly && selectedStems.Count == 0)
+                return Fail("선택 Export할 테이블이 없습니다.");
+
             HashSet<string> xlsxDtStems = hasXlsxSource
                 ? DataExportSourceFilter.CollectDtStemsFromXlsxFolder(excelSourceFolder)
                 : null;
@@ -107,18 +119,22 @@ namespace CSVParserTool
                     Report(DataExportProgressKind.PhaseChanged, phaseLabel: "Excel → CSV 변환", phaseIndex: 0);
                     string csvDir = DataProjectPaths.DataCsvDir(projectRoot);
                     Directory.CreateDirectory(csvDir);
-                    int n = XlsxToCsvConverter.ConvertAllXlsxInFolder(excelSourceFolder, csvDir, log);
+                    int n = XlsxToCsvConverter.ConvertAllXlsxInFolder(
+                        excelSourceFolder,
+                        csvDir,
+                        log,
+                        selectedOnly ? selectedStems : null);
                     log?.Invoke($"Excel → CSV refresh ({n} file(s)).");
 
                     if (removeOrphanArtifacts && xlsxDtStems != null && xlsxDtStems.Count > 0)
                     {
                         int removed = DataExportSourceFilter.RemoveOrphanArtifacts(projectRoot, xlsxDtStems, log);
                         if (removed > 0)
-                            log?.Invoke($"XLSX에 없는 고아 파일 {removed}개 정리.");
+                            log?.Invoke($"원본 XLSX가 없는 이전 출력 파일 {removed}개 삭제.");
                     }
                     else if (!removeOrphanArtifacts && xlsxDtStems != null && xlsxDtStems.Count > 0)
                     {
-                        log?.Invoke("고아 파일 정리: OFF (XLSX에 없는 CSV·Bytes·Container 유지).");
+                        log?.Invoke("원본 XLSX가 없는 이전 출력 파일 삭제: OFF (기존 파일 유지).");
                     }
                 }
                 catch (Exception ex)
@@ -135,6 +151,13 @@ namespace CSVParserTool
                 string scriptsDir = DataProjectPaths.ScriptsDataDir(projectRoot);
                 string bytesDir = DataProjectPaths.DataBytesDir(projectRoot);
                 string legacyNdbDir = DataProjectPaths.DataNdbDir(projectRoot);
+                string enumWorkbookPath = EnumCatalogService.FindWorkbook(excelSourceFolder);
+                EnumCatalog enumCatalog = enumWorkbookPath == null
+                    ? null
+                    : EnumCatalogService.ParseXlsx(enumWorkbookPath);
+                string enumCatalogStem = enumWorkbookPath == null
+                    ? null
+                    : Path.GetFileNameWithoutExtension(enumWorkbookPath);
 
                 Directory.CreateDirectory(scriptsDir);
                 Directory.CreateDirectory(dataCsv);
@@ -167,7 +190,28 @@ namespace CSVParserTool
                         .ToArray();
                 }
 
-                if (csvFiles.Length == 0)
+                string[] validationCsvFiles = selectedOnly && hasXlsxSource
+                    ? xlsxDtStems
+                        .Select(stem => Path.Combine(dataCsv, stem + ".csv"))
+                        .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                        .ToArray()
+                    : csvFiles;
+                if (selectedOnly)
+                {
+                    csvFiles = csvFiles
+                        .Where(path => selectedStems.Contains(Path.GetFileNameWithoutExtension(path)))
+                        .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+
+                    bool enumCatalogSelected = enumCatalog != null
+                        && selectedStems.Contains(enumCatalogStem);
+                    if (csvFiles.Length == 0 && !enumCatalogSelected)
+                        return Fail("체크한 테이블의 CSV를 찾을 수 없습니다. XLSX 파일 이름과 프로젝트 경로를 확인하세요.");
+
+                    log?.Invoke($"선택 Export: 테이블 {csvFiles.Length}개{(enumCatalogSelected ? " · Enum 관리 포함" : string.Empty)}");
+                }
+
+                if (csvFiles.Length == 0 && enumCatalog == null)
                     return Fail("Export할 DT_*.csv가 없습니다. XLSX 원본 폴더를 지정하세요.");
 
                 var pendingNames = csvFiles.Select(Path.GetFileName).ToArray();
@@ -191,23 +235,50 @@ namespace CSVParserTool
                 }
 
                 var parseOptions = new CsvParseOptions { ExportVersion = trimmedExportVersion };
-                var parseResults = new ConcurrentBag<CsvTableParseResult>();
+                var parsedTables = new ConcurrentDictionary<string, CsvTableParseResult>(
+                    StringComparer.OrdinalIgnoreCase);
+                var parseErrors = new ConcurrentBag<string>();
+
+                ParallelBatchRunner.ForEach(
+                    validationCsvFiles,
+                    csvPath =>
+                    {
+                        try
+                        {
+                            string fileName = Path.GetFileNameWithoutExtension(csvPath);
+                            parsedTables[csvPath] = TryParseTableForExport(
+                                csvPath,
+                                excelSourceFolder,
+                                fileName,
+                                parseOptions);
+                        }
+                        catch (Exception ex)
+                        {
+                            parseErrors.Add($"{Path.GetFileName(csvPath)}: {ex.Message}");
+                        }
+                    });
+
+                if (!parseErrors.IsEmpty)
+                    throw new InvalidOperationException(parseErrors.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).First());
+
+                var parseResults = parsedTables.Values
+                    .OrderBy(t => t.ClassName, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                // 선택하지 않은 테이블도 읽어 참조 대상과 Id가 올바른지 함께 검증한다.
+                CrossTableReferenceResolver.Resolve(parseResults);
+                EnumCatalogService.ApplyToTables(enumCatalog, parseResults);
                 ParallelBatchRunner.ForEach(
                     csvFiles,
                     csvPath =>
                     {
                         TableExportOutcome outcome = ExportSingleTable(
                             csvPath,
-                            excelSourceFolder,
+                            parsedTables[csvPath],
                             scriptsDir,
                             dataCsv,
                             bytesDir,
-                            legacyNdbDir,
-                            parseOptions);
+                            legacyNdbDir);
                         outcomes.Add(outcome);
-
-                        if (outcome.ParseResult != null)
-                            parseResults.Add(outcome.ParseResult);
 
                         if (outcome.LogLines != null)
                         {
@@ -249,7 +320,26 @@ namespace CSVParserTool
                     .ToList();
                 int ok = succeeded.Count;
                 int failed = outcomes.Count - ok;
-                var toolTableClassNames = succeeded.Select(o => o.ClassFileName).ToList();
+                List<CsvTableParseResult> runtimeTables;
+                if (selectedOnly)
+                {
+                    var selectedClassNames = new HashSet<string>(
+                        succeeded.Select(o => o.ClassFileName),
+                        StringComparer.OrdinalIgnoreCase);
+                    runtimeTables = parseResults
+                        .Where(table =>
+                            selectedClassNames.Contains(table.ClassName)
+                            || File.Exists(Path.Combine(scriptsDir, table.ClassName + "Container.cs")))
+                        .ToList();
+                }
+                else
+                {
+                    runtimeTables = parseResults;
+                }
+
+                var toolTableClassNames = runtimeTables
+                    .Select(table => table.ClassName)
+                    .ToList();
 
                 if (failed > 0)
                 {
@@ -276,6 +366,29 @@ namespace CSVParserTool
                     };
                 }
 
+                if (ok == 0 && enumCatalog != null)
+                {
+                    EnumCatalogService.WriteGeneratedFile(scriptsDir, enumCatalog, log);
+                    const string enumSummary =
+                        "Enum Export 완료\r\n" +
+                        "· Scripts: Assets\\_Game\\DataTables\\Scripts\\DataEnums.ToolGenerated.g.cs";
+                    Report(
+                        DataExportProgressKind.Finished,
+                        phaseLabel: "Enum Export 완료",
+                        phaseIndex: 2,
+                        completed: 1,
+                        total: 1,
+                        success: true);
+                    return new DataExportResult
+                    {
+                        Ok = true,
+                        SummaryLines = enumSummary,
+                        TableResults = tableResults,
+                        SucceededCount = 0,
+                        FailedCount = 0
+                    };
+                }
+
                 if (ok == 0)
                 {
                     Report(
@@ -296,15 +409,28 @@ namespace CSVParserTool
                     };
                 }
 
+                string generatedEnumPath = Path.Combine(scriptsDir, EnumCatalogService.GeneratedFileName);
+                if (enumCatalog != null)
+                {
+                    EnumCatalogService.WriteGeneratedFile(scriptsDir, enumCatalog, log);
+                }
+                else if (removeOrphanArtifacts && File.Exists(generatedEnumPath))
+                {
+                    File.Delete(generatedEnumPath);
+                    if (File.Exists(generatedEnumPath + ".meta"))
+                        File.Delete(generatedEnumPath + ".meta");
+                    log?.Invoke($"Enum 관리 XLSX가 없어 이전 enum 생성 파일을 삭제했습니다: {EnumCatalogService.GeneratedFileName}");
+                }
+
                 Report(DataExportProgressKind.PhaseChanged, phaseLabel: "Unity 스크립트 · MessagePack 생성", phaseIndex: 2);
                 UnityDataRuntimeGenerator.Write(
                     scriptsDir,
                     toolTableClassNames,
-                    parseResults.OrderBy(t => t.ClassName, StringComparer.OrdinalIgnoreCase).ToList(),
+                    runtimeTables.OrderBy(t => t.ClassName, StringComparer.OrdinalIgnoreCase).ToList(),
                     log);
 
                 string summary =
-                    $"Done. ({ok} table(s))\r\n" +
+                    $"{(selectedOnly ? "선택 Export" : "전체 Export")} 완료 ({ok}개 테이블)\r\n" +
                     "· Scripts: Assets\\_Game\\DataTables\\Scripts\r\n" +
                     "· Content: Assets\\_Game\\DataTables\\Content\\CSV · Bytes (DT_*)\r\n" +
                     "· Unity: PJDev.Data.asmdef + ToolGenerated.g.cs + *Container.cs + InfoStorage + MessagePackGenerated.cs";
@@ -344,12 +470,11 @@ namespace CSVParserTool
 
         private static TableExportOutcome ExportSingleTable(
             string csvPath,
-            string excelSourceFolder,
+            CsvTableParseResult table,
             string scriptsDir,
             string dataCsv,
             string bytesDir,
-            string legacyNdbDir,
-            CsvParseOptions parseOptions)
+            string legacyNdbDir)
         {
             var outcome = new TableExportOutcome
             {
@@ -364,11 +489,6 @@ namespace CSVParserTool
 
             try
             {
-                CsvTableParseResult table = TryParseTableForExport(
-                    csvPath,
-                    excelSourceFolder,
-                    fileName,
-                    parseOptions);
                 outcome.ParseResult = table;
 
                 string legacyRecordCs = Path.Combine(scriptsDir, classFileName + ".cs");

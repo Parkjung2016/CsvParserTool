@@ -1,0 +1,245 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using ClosedXML.Excel;
+
+namespace CSVParserTool
+{
+    public sealed class EnumCatalog
+    {
+        private readonly Dictionary<string, IReadOnlyList<string>> members;
+
+        public IReadOnlyDictionary<string, IReadOnlyList<string>> Members => members;
+        public IReadOnlyList<string> DeclarationOrder { get; }
+
+        public EnumCatalog(
+            IReadOnlyList<string> declarationOrder,
+            IReadOnlyDictionary<string, IReadOnlyList<string>> members)
+        {
+            DeclarationOrder = declarationOrder ?? Array.Empty<string>();
+            this.members = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+            if (members == null)
+                return;
+
+            foreach (var pair in members)
+                this.members[pair.Key] = pair.Value;
+        }
+    }
+
+    public static class EnumCatalogService
+    {
+        public const string WorkbookFileName = "DT_Enums.xlsx";
+        public const string GeneratedFileName = "DataEnums.ToolGenerated.g.cs";
+
+        public static bool IsCatalogPath(string path) =>
+            string.Equals(Path.GetFileName(path), WorkbookFileName, StringComparison.OrdinalIgnoreCase);
+
+        public static string FindWorkbook(string xlsxFolder)
+        {
+            if (string.IsNullOrWhiteSpace(xlsxFolder) || !Directory.Exists(xlsxFolder))
+                return null;
+
+            return Directory.GetFiles(xlsxFolder, "*.xlsx")
+                .FirstOrDefault(IsCatalogPath);
+        }
+
+        public static EnumCatalog ParseXlsx(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                throw new FileNotFoundException("Enum 관리 XLSX를 찾을 수 없습니다.", path);
+
+            using (var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete))
+            using (var workbook = new XLWorkbook(stream))
+            {
+                IXLWorksheet sheet = workbook.Worksheets.FirstOrDefault();
+                if (sheet == null)
+                    throw new InvalidOperationException("Enum 관리 XLSX에 워크시트가 없습니다.");
+
+                IXLRow headerRow = sheet.RowsUsed().FirstOrDefault();
+                if (headerRow == null)
+                    throw new InvalidOperationException("Enum 관리 XLSX가 비어 있습니다.");
+
+                int enumColumn = FindColumn(headerRow, "enumname", "enum", "enum이름");
+                int valueColumn = FindColumn(headerRow, "value", "값", "enumvalue");
+                if (enumColumn < 0 || valueColumn < 0)
+                {
+                    throw new InvalidOperationException(
+                        "Enum 관리 XLSX의 첫 행에 EnumName과 Value 컬럼이 필요합니다.");
+                }
+
+                var order = new List<string>();
+                var values = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+                int lastRow = sheet.LastRowUsed()?.RowNumber() ?? headerRow.RowNumber();
+                for (int rowNumber = headerRow.RowNumber() + 1; rowNumber <= lastRow; rowNumber++)
+                {
+                    string enumName = sheet.Cell(rowNumber, enumColumn).GetString().Trim();
+                    string value = sheet.Cell(rowNumber, valueColumn).GetString().Trim();
+                    if (string.IsNullOrEmpty(enumName) && string.IsNullOrEmpty(value))
+                        continue;
+                    if (string.IsNullOrEmpty(enumName) || string.IsNullOrEmpty(value))
+                    {
+                        throw new InvalidOperationException(
+                            $"Enum 관리 XLSX {rowNumber}행: EnumName과 Value를 모두 입력하세요.");
+                    }
+                    if (!CsvColumnTypes.IsValidTypeIdentifier(enumName))
+                        throw new InvalidOperationException(
+                            $"Enum 관리 XLSX {rowNumber}행: EnumName '{enumName}'은 C# 타입 이름으로 사용할 수 없습니다.");
+                    if (!CsvColumnTypes.IsValidTypeIdentifier(value))
+                        throw new InvalidOperationException(
+                            $"Enum 관리 XLSX {rowNumber}행: Value '{value}'은 C# enum 값 이름으로 사용할 수 없습니다.");
+
+                    if (!values.TryGetValue(enumName, out List<string> enumValues))
+                    {
+                        enumValues = new List<string>();
+                        values.Add(enumName, enumValues);
+                        order.Add(enumName);
+                    }
+
+                    if (enumValues.Any(existing => string.Equals(existing, value, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        throw new InvalidOperationException(
+                            $"Enum 관리 XLSX {rowNumber}행: {enumName}.{value} 값이 중복됩니다.");
+                    }
+
+                    enumValues.Add(value);
+                }
+
+                var readOnly = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var pair in values)
+                    readOnly[pair.Key] = pair.Value;
+                return new EnumCatalog(order, readOnly);
+            }
+        }
+
+        public static string GenerateSource(EnumCatalog catalog)
+        {
+            if (catalog == null)
+                throw new ArgumentNullException(nameof(catalog));
+
+            var sb = new StringBuilder();
+            sb.AppendLine("// <auto-generated>");
+            sb.AppendLine("namespace PJDev.Data");
+            sb.AppendLine("{");
+            foreach (string enumName in catalog.DeclarationOrder)
+            {
+                sb.AppendLine($"    public enum {enumName}");
+                sb.AppendLine("    {");
+                foreach (string value in catalog.Members[enumName])
+                    sb.AppendLine($"        {value},");
+                sb.AppendLine("    }");
+                sb.AppendLine();
+            }
+            sb.AppendLine("}");
+            return sb.ToString();
+        }
+
+        public static string WriteGeneratedFile(string scriptsDir, EnumCatalog catalog, Action<string> log)
+        {
+            Directory.CreateDirectory(scriptsDir);
+            string path = Path.Combine(scriptsDir, GeneratedFileName);
+            File.WriteAllText(path, GenerateSource(catalog), new UTF8Encoding(false));
+            log?.Invoke($"Enum: {path} ({catalog.DeclarationOrder.Count}개)");
+            return path;
+        }
+
+        public static void ApplyToTables(EnumCatalog catalog, IReadOnlyList<CsvTableParseResult> tables)
+        {
+            if (tables == null)
+                return;
+
+            foreach (CsvTableParseResult table in tables)
+            {
+                if (table == null)
+                    continue;
+
+                for (int column = 0; column < table.ColumnTypes.Length; column++)
+                {
+                    string columnType = table.ColumnTypes[column];
+                    bool isArray = CsvColumnTypes.TryGetArrayElementType(columnType, out string elementType);
+                    string enumName = isArray ? elementType : columnType;
+                    if (CsvColumnTypes.IsPrimitiveType(enumName))
+                        continue;
+
+                    if (catalog == null || !catalog.Members.TryGetValue(enumName, out IReadOnlyList<string> allowedValues))
+                    {
+                        throw new InvalidOperationException(
+                            $"{table.ClassName}.{table.Headers[column]}: enum 타입 '{enumName}'이(가) DT_Enums.xlsx에 등록되지 않았습니다. " +
+                            $"EnumName에 '{enumName}'을 등록하고 타입 행에는 'enum:{enumName}{(isArray ? "[]" : string.Empty)}' 형식을 사용하세요.");
+                    }
+
+                    table.UseCatalogEnum(enumName, allowedValues);
+                    for (int row = 0; row < table.DataRows.Count; row++)
+                    {
+                        string cell = column < table.DataRows[row].Length
+                            ? table.DataRows[row][column] ?? string.Empty
+                            : string.Empty;
+                        if (isArray)
+                        {
+                            string[] canonical = CsvColumnTypes.SplitArrayCell(cell)
+                                .Select(value => ValidateAndCanonicalize(table, row, column, enumName, value, allowedValues))
+                                .ToArray();
+                            table.DataRows[row][column] = string.Join("|", canonical);
+                        }
+                        else
+                        {
+                            table.DataRows[row][column] = ValidateAndCanonicalize(
+                                table,
+                                row,
+                                column,
+                                enumName,
+                                cell.Trim(),
+                                allowedValues);
+                        }
+                    }
+                }
+            }
+        }
+        private static string ValidateAndCanonicalize(
+            CsvTableParseResult table,
+            int row,
+            int column,
+            string enumName,
+            string value,
+            IReadOnlyList<string> allowedValues)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+
+            string canonical = allowedValues.FirstOrDefault(
+                item => string.Equals(item, value.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (canonical != null)
+                return canonical;
+
+            int idColumn = CsvTableParser.FindIdColumnIndex(table.Headers);
+            string id = idColumn >= 0 && idColumn < table.DataRows[row].Length
+                ? table.DataRows[row][idColumn]
+                : (row + 1).ToString();
+            throw new InvalidOperationException(
+                $"{table.ClassName}[Id={id}].{table.Headers[column]}: '{value}'은(는) {enumName}에 등록되지 않은 값입니다.");
+        }
+
+        private static int FindColumn(IXLRow headerRow, params string[] aliases)
+        {
+            foreach (IXLCell cell in headerRow.CellsUsed())
+            {
+                string normalized = NormalizeHeader(cell.GetString());
+                if (aliases.Any(alias => string.Equals(normalized, alias, StringComparison.OrdinalIgnoreCase)))
+                    return cell.Address.ColumnNumber;
+            }
+            return -1;
+        }
+
+        private static string NormalizeHeader(string value) =>
+            (value ?? string.Empty)
+                .Replace(" ", string.Empty)
+                .Replace("_", string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+    }
+}

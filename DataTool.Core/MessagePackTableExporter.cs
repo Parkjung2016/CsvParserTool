@@ -79,6 +79,15 @@ namespace CSVParserTool
             string cell,
             IReadOnlyDictionary<string, IReadOnlyList<string>> enums)
         {
+            if (CsvColumnTypes.TryGetArrayElementType(columnType, out string elementType))
+            {
+                string[] items = CsvColumnTypes.SplitArrayCell(cell);
+                writer.WriteArrayHeader(items.Length);
+                foreach (string item in items)
+                    WriteColumn(ref writer, elementType, item, enums);
+                return;
+            }
+
             if (enums != null && enums.TryGetValue(columnType, out IReadOnlyList<string> members))
             {
                 string id = CsvTableParser.SanitizeIdentifier(cell.Trim());
