@@ -11,7 +11,7 @@ namespace CSVParserTool.MiniGames
         "builtin.volley",
         "배구",
         Description = "AI와 겨루는 2D 아케이드 배구입니다. 7점을 먼저 얻으면 승리합니다.",
-        Controls = "← → 또는 A D 이동 · ↑/W/Space 점프",
+        Controls = "←/A, →/D 이동 · ↑/W/Space 점프 · Shift 대시",
         Order = 10)]
     public sealed class VolleyMiniGame : ExportMiniGame, IConfigurableMiniGameDifficulty
     {
@@ -19,7 +19,9 @@ namespace CSVParserTool.MiniGames
         private const float BallGravity = 650F;
         private const float PlayerMoveSpeed = 235F;
         private const float PlayerJumpSpeed = 435F;
-        private const float PlayerDashSpeed = 250F;
+        private const float PlayerDashSpeed = 500F;
+        private const float DashCooldownSeconds = 0.85F;
+        private const float DashEffectSeconds = 0.14F;
         private const float ActorRadius = 27F;
         private const float BallRadius = 15F;
         private const float NetWidth = 10F;
@@ -30,19 +32,24 @@ namespace CSVParserTool.MiniGames
         private static readonly VolleyDifficultySettings[] DifficultyPresets =
         {
             new VolleyDifficultySettings(
-                "easy", "쉬움", "AI가 늦게 반응하고 예측 오차가 큽니다.",
+                "easy", "쉬움", "AI가 천천히 반응하며 대시는 드물게 사용합니다.",
                 aiMoveSpeed: 178F, reactionSeconds: 0.22F, predictionError: 62F,
-                jumpDistance: 68F, jumpChance: 0.42F, hitBoost: 25F),
+                jumpDistance: 68F, jumpChance: 0.42F, hitBoost: 25F,
+                dashChance: 0.18F, dashTriggerDistance: 150F,
+                dashSpeedMultiplier: 0.90F, dashCooldownMultiplier: 1.25F),
             new VolleyDifficultySettings(
-                "normal", "보통", "AI가 공의 낙하지점을 적당히 예측합니다.",
+                "normal", "보통", "AI가 상황에 따라 점프와 대시를 사용합니다.",
                 aiMoveSpeed: 215F, reactionSeconds: 0.12F, predictionError: 32F,
-                jumpDistance: 86F, jumpChance: 0.72F, hitBoost: 48F),
+                jumpDistance: 86F, jumpChance: 0.72F, hitBoost: 48F,
+                dashChance: 0.52F, dashTriggerDistance: 115F,
+                dashSpeedMultiplier: 1.00F, dashCooldownMultiplier: 1.00F),
             new VolleyDifficultySettings(
-                "hard", "어려움", "AI가 빠르게 예측하고 적극적으로 점프합니다.",
+                "hard", "어려움", "AI가 빠르게 예측하며 대시를 적극적으로 사용합니다.",
                 aiMoveSpeed: 252F, reactionSeconds: 0.055F, predictionError: 12F,
-                jumpDistance: 108F, jumpChance: 0.94F, hitBoost: 72F)
+                jumpDistance: 108F, jumpChance: 0.94F, hitBoost: 72F,
+                dashChance: 0.82F, dashTriggerDistance: 85F,
+                dashSpeedMultiplier: 1.5F, dashCooldownMultiplier: 0.85F)
         };
-
         private readonly Actor player = new Actor();
         private readonly Actor ai = new Actor();
         private VolleyDifficultySettings difficulty = DifficultyPresets[2];
@@ -60,10 +67,10 @@ namespace CSVParserTool.MiniGames
         private float matchResetCountdown;
         private float aiReactionCountdown;
         private float aiTargetX;
-        private bool ballActive;
-        private bool playerServes = true;
-        private bool playerJumpQueued;
-        private bool playerDashQueued;
+        private bool isBallActive;
+        private bool isPlayerServes = true;
+        private bool isPlayerJumpQueued;
+        private bool isPlayerDashQueued;
         private int playerScore;
         private int aiScore;
         private string banner = "";
@@ -97,8 +104,8 @@ namespace CSVParserTool.MiniGames
             UpdateCourt(size);
             if (size.Width > 0 && size.Height > 0)
             {
-                ClampActor(player, leftSide: true);
-                ClampActor(ai, leftSide: false);
+                ClampActor(player, isLeftSide: true);
+                ClampActor(ai, isLeftSide: false);
                 ClampBallToCourt(size);
             }
         }
@@ -106,10 +113,10 @@ namespace CSVParserTool.MiniGames
         protected override void OnKeyDown(Keys key)
         {
             if (key == Keys.Up || key == Keys.W || key == Keys.Space)
-                playerJumpQueued = true;
+                isPlayerJumpQueued = true;
 
-            if (key == Keys.Shift)
-                playerDashQueued = true;
+            if (key == Keys.ShiftKey)
+                isPlayerDashQueued = true;
 
         }
 
@@ -130,8 +137,8 @@ namespace CSVParserTool.MiniGames
         {
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
             DrawCourt(graphics, viewport);
-            DrawActor(graphics, player, Context.Palette.Accent, "YOU", facingLeft: false);
-            DrawActor(graphics, ai, Context.Palette.Danger, "AI", facingLeft: true);
+            DrawActor(graphics, player, Context.Palette.Accent, "YOU", isFacingLeft: false);
+            DrawActor(graphics, ai, Context.Palette.Danger, "AI", isFacingLeft: true);
             DrawBall(graphics);
             DrawHud(graphics, viewport);
         }
@@ -155,19 +162,19 @@ namespace CSVParserTool.MiniGames
 
             UpdatePlayer(deltaTime);
             UpdateAi(deltaTime);
-            UpdateActorPhysics(player, deltaTime, leftSide: true);
-            UpdateActorPhysics(ai, deltaTime, leftSide: false);
+            UpdateActorPhysics(player, deltaTime, isLeftSide: true);
+            UpdateActorPhysics(ai, deltaTime, isLeftSide: false);
 
-            if (!ballActive)
+            if (!isBallActive)
             {
-                Actor server = playerServes ? player : ai;
-                ballX = server.X + (playerServes ? 18F : -18F);
+                Actor server = isPlayerServes ? player : ai;
+                ballX = server.X + (isPlayerServes ? 18F : -18F);
                 ballY = server.Y - ActorRadius - BallRadius - 8F;
                 serveCountdown -= deltaTime;
                 if (serveCountdown <= 0F)
                 {
-                    ballActive = true;
-                    ballVelocityX = playerServes ? 125F : -125F;
+                    isBallActive = true;
+                    ballVelocityX = isPlayerServes ? 125F : -125F;
                     ballVelocityY = -315F;
                     banner = "";
                 }
@@ -185,8 +192,8 @@ namespace CSVParserTool.MiniGames
 
             if (ballY + BallRadius >= groundY)
             {
-                bool landedOnPlayerSide = ballX < netX;
-                AwardPoint(playerWon: !landedOnPlayerSide);
+                bool isLandedOnPlayerSide = ballX < netX;
+                AwardPoint(isPlayerWon: !isLandedOnPlayerSide);
             }
         }
 
@@ -198,19 +205,22 @@ namespace CSVParserTool.MiniGames
             float targetVelocity = direction * PlayerMoveSpeed;
             player.VelocityX = MoveTowards(player.VelocityX, targetVelocity, 1100F * deltaTime);
 
-            if (playerJumpQueued)
+            if (isPlayerJumpQueued)
             {
-                if (player.Grounded)
+                if (player.IsGrounded)
                 {
                     player.VelocityY = -PlayerJumpSpeed;
-                    player.Grounded = false;
+                    player.IsGrounded = false;
                 }
-                playerJumpQueued = false;
+                isPlayerJumpQueued = false;
             }
-            if (playerDashQueued)
+            if (isPlayerDashQueued)
             {
-                player.VelocityX = PlayerDashSpeed;
-                playerDashQueued = false;
+                float dashDirection = direction != 0
+                    ? direction
+                    : Math.Abs(player.VelocityX) > 0.1F ? Math.Sign(player.VelocityX) : 1F;
+                TryDash(player, dashDirection, PlayerDashSpeed, DashCooldownSeconds);
+                isPlayerDashQueued = false;
             }
         }
 
@@ -221,20 +231,33 @@ namespace CSVParserTool.MiniGames
             {
                 aiReactionCountdown = difficulty.ReactionSeconds;
                 float defensivePosition = Context.ViewportSize.Width * 0.76F;
-                bool threatening = ballActive && (ballX >= netX || ballVelocityX > 0F);
-                aiTargetX = threatening ? PredictLandingX() : defensivePosition;
+                bool isThreatening = isBallActive && (ballX >= netX || ballVelocityX > 0F);
+                aiTargetX = isThreatening ? PredictLandingX() : defensivePosition;
                 aiTargetX += RandomRange(-difficulty.PredictionError, difficulty.PredictionError);
 
                 float horizontalDistance = Math.Abs(ballX - ai.X);
-                bool ballReachable = ballActive
+                bool isBallReachable = isBallActive
                     && ballX > netX - 25F
                     && horizontalDistance <= difficulty.JumpDistance
                     && ballY < ai.Y + 4F
                     && ballY > ai.Y - 155F;
-                if (ai.Grounded && ballReachable && Context.Random.NextDouble() <= difficulty.JumpChance)
+                if (ai.IsGrounded && isBallReachable && Context.Random.NextDouble() <= difficulty.JumpChance)
                 {
                     ai.VelocityY = -PlayerJumpSpeed * 0.98F;
-                    ai.Grounded = false;
+                    ai.IsGrounded = false;
+                }
+
+                float dashDifference = aiTargetX - ai.X;
+                bool shouldDash = isThreatening
+                    && Math.Abs(dashDifference) >= difficulty.DashTriggerDistance
+                    && Context.Random.NextDouble() <= difficulty.DashChance;
+                if (shouldDash)
+                {
+                    TryDash(
+                        ai,
+                        Math.Sign(dashDifference),
+                        PlayerDashSpeed * difficulty.DashSpeedMultiplier,
+                        DashCooldownSeconds * difficulty.DashCooldownMultiplier);
                 }
             }
 
@@ -243,27 +266,50 @@ namespace CSVParserTool.MiniGames
             float targetVelocity = direction * difficulty.AiMoveSpeed;
             ai.VelocityX = MoveTowards(ai.VelocityX, targetVelocity, 1250F * deltaTime);
         }
-
-        private void UpdateActorPhysics(Actor actor, float deltaTime, bool leftSide)
+        private void UpdateActorPhysics(Actor actor, float deltaTime, bool isLeftSide)
         {
+            actor.DashCooldownRemaining = Math.Max(0F, actor.DashCooldownRemaining - deltaTime);
+            actor.DashEffectRemaining = Math.Max(0F, actor.DashEffectRemaining - deltaTime);
+            bool wasGrounded = actor.IsGrounded;
+
             actor.VelocityY += Gravity * deltaTime;
             actor.X += actor.VelocityX * deltaTime;
             actor.Y += actor.VelocityY * deltaTime;
-            ClampActor(actor, leftSide);
+            ClampActor(actor, isLeftSide);
 
             float standingY = groundY - ActorRadius;
             if (actor.Y >= standingY)
             {
                 actor.Y = standingY;
                 actor.VelocityY = 0F;
-                actor.Grounded = true;
+                actor.IsGrounded = true;
+                if (!wasGrounded)
+                    actor.HasAirDashed = false;
+            }
+            else
+            {
+                actor.IsGrounded = false;
             }
         }
 
-        private void ClampActor(Actor actor, bool leftSide)
+        private static bool TryDash(Actor actor, float direction, float speed, float cooldownSeconds)
         {
-            float min = leftSide ? ActorRadius + 4F : netX + NetWidth * 0.5F + ActorRadius + 3F;
-            float max = leftSide ? netX - NetWidth * 0.5F - ActorRadius - 3F : Context.ViewportSize.Width - ActorRadius - 4F;
+            if (Math.Abs(direction) < 0.01F || actor.DashCooldownRemaining > 0F)
+                return false;
+            if (!actor.IsGrounded && actor.HasAirDashed)
+                return false;
+
+            actor.VelocityX = Math.Sign(direction) * speed;
+            actor.DashCooldownRemaining = cooldownSeconds;
+            actor.DashEffectRemaining = DashEffectSeconds;
+            if (!actor.IsGrounded)
+                actor.HasAirDashed = true;
+            return true;
+        }
+        private void ClampActor(Actor actor, bool isLeftSide)
+        {
+            float min = isLeftSide ? ActorRadius + 4F : netX + NetWidth * 0.5F + ActorRadius + 3F;
+            float max = isLeftSide ? netX - NetWidth * 0.5F - ActorRadius - 3F : Context.ViewportSize.Width - ActorRadius - 4F;
             if (max < min) max = min;
             actor.X = Math.Max(min, Math.Min(max, actor.X));
             if ((actor.X <= min && actor.VelocityX < 0F) || (actor.X >= max && actor.VelocityX > 0F))
@@ -272,7 +318,7 @@ namespace CSVParserTool.MiniGames
 
         private float PredictLandingX()
         {
-            if (!ballActive)
+            if (!isBallActive)
                 return Context.ViewportSize.Width * 0.76F;
 
             float targetY = groundY - ActorRadius - BallRadius;
@@ -327,9 +373,9 @@ namespace CSVParserTool.MiniGames
         {
             float netTop = groundY - netHeight;
             float halfWidth = NetWidth * 0.5F;
-            bool overlapsX = ballX + BallRadius > netX - halfWidth && ballX - BallRadius < netX + halfWidth;
-            bool overlapsY = ballY + BallRadius > netTop && ballY - BallRadius < groundY;
-            if (!overlapsX || !overlapsY)
+            bool isOverlapsX = ballX + BallRadius > netX - halfWidth && ballX - BallRadius < netX + halfWidth;
+            bool isOverlapsY = ballY + BallRadius > netTop && ballY - BallRadius < groundY;
+            if (!isOverlapsX || !isOverlapsY)
                 return;
 
             if (ballY < netTop && ballVelocityY > 0F)
@@ -391,10 +437,10 @@ namespace CSVParserTool.MiniGames
             ballVelocityY *= scale;
         }
 
-        private void AwardPoint(bool playerWon)
+        private void AwardPoint(bool isPlayerWon)
         {
-            ballActive = false;
-            if (playerWon)
+            isBallActive = false;
+            if (isPlayerWon)
             {
                 playerScore++;
                 Context.SetScore(playerScore);
@@ -413,7 +459,7 @@ namespace CSVParserTool.MiniGames
                 return;
             }
 
-            playerServes = !playerWon;
+            isPlayerServes = !isPlayerWon;
             PrepareRound();
         }
 
@@ -422,9 +468,9 @@ namespace CSVParserTool.MiniGames
             playerScore = 0;
             aiScore = 0;
             Context?.SetScore(0);
-            playerServes = Context == null || Context.Random.Next(2) == 0;
+            isPlayerServes = Context == null || Context.Random.Next(2) == 0;
             matchResetCountdown = 0F;
-            banner = playerServes ? "YOUR SERVE" : "AI SERVE";
+            banner = isPlayerServes ? "YOUR SERVE" : "AI SERVE";
             PrepareRound();
         }
 
@@ -436,12 +482,22 @@ namespace CSVParserTool.MiniGames
             player.Y = ai.Y = groundY - ActorRadius;
             player.VelocityX = player.VelocityY = 0F;
             ai.VelocityX = ai.VelocityY = 0F;
-            player.Grounded = ai.Grounded = true;
+            player.IsGrounded = ai.IsGrounded = true;
             aiTargetX = ai.X;
             aiReactionCountdown = 0F;
             serveCountdown = 0.85F;
-            ballActive = false;
-            playerJumpQueued = false;
+            isBallActive = false;
+            isPlayerJumpQueued = false;
+            isPlayerDashQueued = false;
+            ResetDashState(player);
+            ResetDashState(ai);
+        }
+
+        private static void ResetDashState(Actor actor)
+        {
+            actor.DashCooldownRemaining = 0F;
+            actor.DashEffectRemaining = 0F;
+            actor.HasAirDashed = false;
         }
 
         private void UpdateCourt(Size viewport)
@@ -503,10 +559,17 @@ namespace CSVParserTool.MiniGames
             }
         }
 
-        private void DrawActor(Graphics graphics, Actor actor, Color color, string label, bool facingLeft)
+        private void DrawActor(Graphics graphics, Actor actor, Color color, string label, bool isFacingLeft)
         {
             float left = actor.X - ActorRadius;
             float top = actor.Y - ActorRadius;
+            if (actor.DashEffectRemaining > 0F)
+            {
+                float alphaRatio = actor.DashEffectRemaining / DashEffectSeconds;
+                float trailOffset = -Math.Sign(actor.VelocityX) * 22F;
+                using (var trail = new SolidBrush(Color.FromArgb((int)(70F * alphaRatio), color)))
+                    graphics.FillEllipse(trail, left + trailOffset, top + 3F, ActorRadius * 2F, ActorRadius * 2F - 6F);
+            }
             using (var shadow = new SolidBrush(Color.FromArgb(45, Color.Black)))
                 graphics.FillEllipse(shadow, actor.X - 29F, groundY - 9F, 58F, 13F);
             using (var body = new SolidBrush(color))
@@ -518,7 +581,7 @@ namespace CSVParserTool.MiniGames
                 graphics.DrawLine(outline, actor.X + 12F, top + 5F, actor.X + 17F, top - 9F);
             }
 
-            float eyeOffset = facingLeft ? -6F : 6F;
+            float eyeOffset = isFacingLeft ? -6F : 6F;
             using (var eye = new SolidBrush(Color.White))
             using (var pupil = new SolidBrush(Color.FromArgb(30, 35, 45)))
             {
@@ -561,6 +624,7 @@ namespace CSVParserTool.MiniGames
             {
                 graphics.DrawString(difficultyText, bodyFont, muted, 14F, 14F);
                 graphics.DrawString($"BEST  {Context.HighScore}", bodyFont, muted, 14F, 31F);
+                graphics.DrawString(GetDashStatus(player), bodyFont, muted, 14F, viewport.Height - 24F);
             }
 
             if (!string.IsNullOrWhiteSpace(banner))
@@ -583,6 +647,15 @@ namespace CSVParserTool.MiniGames
                 SizeF size = graphics.MeasureString(exportState, bodyFont);
                 graphics.DrawString(exportState, bodyFont, muted, viewport.Width - size.Width - 12F, 14F);
             }
+        }
+
+        private static string GetDashStatus(Actor actor)
+        {
+            if (!actor.IsGrounded && actor.HasAirDashed)
+                return "DASH  착지 후 사용 가능";
+            if (actor.DashCooldownRemaining > 0F)
+                return $"DASH  {actor.DashCooldownRemaining:0.0}s";
+            return "DASH  READY";
         }
 
         private float RandomRange(float minimum, float maximum) =>
@@ -611,7 +684,10 @@ namespace CSVParserTool.MiniGames
             public float Y;
             public float VelocityX;
             public float VelocityY;
-            public bool Grounded;
+            public bool IsGrounded;
+            public bool HasAirDashed;
+            public float DashCooldownRemaining;
+            public float DashEffectRemaining;
         }
 
         private sealed class VolleyDifficultySettings
@@ -625,7 +701,11 @@ namespace CSVParserTool.MiniGames
                 float predictionError,
                 float jumpDistance,
                 float jumpChance,
-                float hitBoost)
+                float hitBoost,
+                float dashChance,
+                float dashTriggerDistance,
+                float dashSpeedMultiplier,
+                float dashCooldownMultiplier)
             {
                 Option = new MiniGameDifficultyOption(id, displayName, description);
                 AiMoveSpeed = aiMoveSpeed;
@@ -634,6 +714,10 @@ namespace CSVParserTool.MiniGames
                 JumpDistance = jumpDistance;
                 JumpChance = jumpChance;
                 HitBoost = hitBoost;
+                DashChance = dashChance;
+                DashTriggerDistance = dashTriggerDistance;
+                DashSpeedMultiplier = dashSpeedMultiplier;
+                DashCooldownMultiplier = dashCooldownMultiplier;
             }
 
             public MiniGameDifficultyOption Option { get; }
@@ -643,6 +727,10 @@ namespace CSVParserTool.MiniGames
             public float JumpDistance { get; }
             public float JumpChance { get; }
             public float HitBoost { get; }
+            public float DashChance { get; }
+            public float DashTriggerDistance { get; }
+            public float DashSpeedMultiplier { get; }
+            public float DashCooldownMultiplier { get; }
         }
     }
 }

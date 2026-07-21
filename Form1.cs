@@ -35,6 +35,8 @@ namespace CSVParserTool
         private readonly Button Btn_EnumCatalog = new Button();
         private readonly Button Btn_CheckAll = new Button();
         private readonly Button Btn_UncheckAll = new Button();
+        private readonly SplitContainer splitExportAndLog = new SplitContainer();
+        private bool exportResultSplitterInitialized;
 
         private readonly HashSet<string> checkedXlsxPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool allowCheckStateChange;
@@ -91,6 +93,7 @@ namespace CSVParserTool
         public Form1()
         {
             InitializeComponent();
+            InitializeExportLogSplitter();
             InitializeInfoButton();
 
             bool darkMode = ToolSettingsStore.DarkMode;
@@ -99,6 +102,60 @@ namespace CSVParserTool
 
             ApplyUiTheme();
             ApplyAppIcon();
+        }
+
+        private void InitializeExportLogSplitter()
+        {
+            Panel_LogSection.SuspendLayout();
+            try
+            {
+                splitExportAndLog.Name = "Split_ExportAndLog";
+                splitExportAndLog.Dock = DockStyle.Fill;
+                splitExportAndLog.Orientation = Orientation.Horizontal;
+                splitExportAndLog.FixedPanel = FixedPanel.Panel1;
+                splitExportAndLog.IsSplitterFixed = false;
+                splitExportAndLog.Panel1MinSize = 82;
+                splitExportAndLog.Panel2MinSize = 54;
+                splitExportAndLog.SplitterWidth = 6;
+                splitExportAndLog.TabStop = false;
+
+                Panel_ExportProgress.Dock = DockStyle.Fill;
+                Panel_LogHeader.Dock = DockStyle.Top;
+                Panel_LogCard.Dock = DockStyle.Fill;
+                splitExportAndLog.Panel1.Controls.Add(Panel_ExportProgress);
+                splitExportAndLog.Panel2.Controls.Add(Panel_LogCard);
+                splitExportAndLog.Panel2.Controls.Add(Panel_LogHeader);
+                Panel_LogSection.Controls.Add(splitExportAndLog);
+                splitExportAndLog.Panel1Collapsed = !Panel_ExportProgress.Visible;
+            }
+            finally
+            {
+                Panel_LogSection.ResumeLayout(true);
+            }
+        }
+
+        private void ShowExportResultsPanel()
+        {
+            Panel_ExportProgress.Visible = true;
+            if (splitExportAndLog.Panel1Collapsed)
+                splitExportAndLog.Panel1Collapsed = false;
+        }
+
+        private void InitializeExportResultSplitterDistance()
+        {
+            if (exportResultSplitterInitialized || splitExportAndLog.Panel1Collapsed)
+                return;
+
+            int maximum = splitExportAndLog.Height
+                - splitExportAndLog.Panel2MinSize
+                - splitExportAndLog.SplitterWidth;
+            if (maximum < splitExportAndLog.Panel1MinSize)
+                return;
+
+            splitExportAndLog.SplitterDistance = Math.Max(
+                splitExportAndLog.Panel1MinSize,
+                Math.Min(168, maximum));
+            exportResultSplitterInitialized = true;
         }
 
         private void InitializeInfoButton()
@@ -495,6 +552,9 @@ namespace CSVParserTool
             splitWork.BackColor = UiTheme.Border;
             splitWork.Panel1.BackColor = UiTheme.AppBackground;
             splitWork.Panel2.BackColor = UiTheme.AppBackground;
+            splitExportAndLog.BackColor = UiTheme.Border;
+            splitExportAndLog.Panel1.BackColor = UiTheme.AppBackground;
+            splitExportAndLog.Panel2.BackColor = UiTheme.AppBackground;
             Panel_LogSection.BackColor = UiTheme.AppBackground;
             Panel_MainContent.BackColor = UiTheme.AppBackground;
             ApplyDimensionalLayout();
@@ -516,6 +576,7 @@ namespace CSVParserTool
                 : new Padding(12, 4, 12, 4);
             splitWork.SplitterWidth = dimensional ? 12 : 6;
             splitOuter.SplitterWidth = dimensional ? 12 : 6;
+            splitExportAndLog.SplitterWidth = dimensional ? 10 : 6;
             splitWork.Panel1.Padding = dimensional ? new Padding(0, 0, 10, 0) : new Padding(0, 0, 8, 0);
             splitWork.Panel2.Padding = dimensional ? new Padding(10, 0, 0, 0) : new Padding(8, 0, 0, 0);
             Panel_ListHeader.Height = dimensional ? 88 : 80;
@@ -1067,7 +1128,7 @@ namespace CSVParserTool
             StopExportCompletionAnimation(resetColors: true);
             exportResultItems.Clear();
             ListView_ExportResults.Items.Clear();
-            Panel_ExportProgress.Visible = true;
+            ShowExportResultsPanel();
             exportExcelPhaseRan = false;
             exportHasTableFailure = false;
             exportActivePhaseIndex = -1;
@@ -1075,6 +1136,7 @@ namespace CSVParserTool
             Label_ExportStatus.Text = "Export 준비 중…";
             ResetExportSteps();
             LayoutSplitContainers();
+            InitializeExportResultSplitterDistance();
             AdjustExportResultColumns();
         }
 
