@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -7,6 +7,9 @@
     <LangVersion>preview</LangVersion>
     <RootNamespace>DataTool.Cli</RootNamespace>
     <AssemblyName>DataTool</AssemblyName>
+    <Authors>Parkjung2016</Authors>
+    <Copyright>Copyright © 2026 Parkjung2016</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
   </PropertyGroup>

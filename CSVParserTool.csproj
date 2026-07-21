@@ -15,6 +15,9 @@
 		<RootNamespace>CSVParserTool</RootNamespace>
 
 		<AssemblyName>DataToolGUI</AssemblyName>
+		<Authors>Parkjung2016</Authors>
+		<Copyright>Copyright © 2026 Parkjung2016</Copyright>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 
 		<UseWindowsForms>true</UseWindowsForms>
 

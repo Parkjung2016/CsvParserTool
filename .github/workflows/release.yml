@@ -57,6 +57,11 @@ jobs:
           New-Item -ItemType Directory -Force -Path release | Out-Null
           Copy-Item bin/Release/net481/DataToolGUI.exe release/DataToolGUI.exe
           Copy-Item bin/Release/net481/DataTool.exe release/DataTool.exe
+          Copy-Item LICENSE release/LICENSE
+          Copy-Item ASSET_LICENSE.md release/ASSET_LICENSE.md
+          Copy-Item ASSET_PROVENANCE.md release/ASSET_PROVENANCE.md
+          Copy-Item THIRD-PARTY-NOTICES.md release/THIRD-PARTY-NOTICES.md
+          Copy-Item licenses release/licenses -Recurse
           Compress-Archive -Path release/* -DestinationPath Tool.zip -Force
 
       - name: Publish GitHub Release

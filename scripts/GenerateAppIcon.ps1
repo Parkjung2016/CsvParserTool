@@ -1,3 +1,5 @@
+$ErrorActionPreference = "Stop"
+
 Add-Type -AssemblyName System.Drawing
 
 $src = Join-Path $PSScriptRoot '..\assets\pjdev-icon-source.png'
@@ -29,7 +31,8 @@ function Get-BitmapBytes([System.Drawing.Bitmap]$bitmap) {
         $imageSize = $headerSize + $xor.Length + $andMask.Length
         $result = New-Object byte[] $imageSize
 
-        $bw = New-Object IO.BinaryWriter (New-Object IO.MemoryStream($result))
+        $bufferStream = [IO.MemoryStream]::new([byte[]]$result)
+        $bw = [IO.BinaryWriter]::new($bufferStream)
         $bw.Write([int32]40)
         $bw.Write([int32]$bitmap.Width)
         $bw.Write([int32](2 * $bitmap.Height))
@@ -45,7 +48,7 @@ function Get-BitmapBytes([System.Drawing.Bitmap]$bitmap) {
 
         [Array]::Copy($xor, 0, $result, $headerSize, $xor.Length)
         [Array]::Copy($andMask, 0, $result, $headerSize + $xor.Length, $andMask.Length)
-        return $result
+        return ,$result
     }
     finally {
         $bitmap.UnlockBits($data)
@@ -82,8 +85,8 @@ foreach ($entry in $entries) {
     $w = [byte]([Math]::Min($entry.Size, 255))
     $h = $w
     if ($entry.Size -ge 256) {
-        $w = 0
-        $h = 0
+        $w = [byte]0
+        $h = [byte]0
     }
 
     $bw.Write($w)
@@ -98,7 +101,7 @@ foreach ($entry in $entries) {
 }
 
 foreach ($entry in $entries) {
-    $bw.Write($entry.Data)
+    $bw.Write([byte[]]$entry.Data, 0, $entry.Data.Length)
 }
 
 $bw.Flush()

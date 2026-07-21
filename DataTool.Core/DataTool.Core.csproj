@@ -6,6 +6,9 @@
     <LangVersion>preview</LangVersion>
     <RootNamespace>CSVParserTool</RootNamespace>
     <AssemblyName>DataTool.Core</AssemblyName>
+    <Authors>Parkjung2016</Authors>
+    <Copyright>Copyright © 2026 Parkjung2016</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
   </PropertyGroup>
 
