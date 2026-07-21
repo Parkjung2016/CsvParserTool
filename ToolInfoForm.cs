@@ -192,6 +192,7 @@ namespace CSVParserTool
             sections.Add(new GuideSection("Enum 관리", RenderEnumCatalog));
             sections.Add(new GuideSection("테이블 참조", RenderReferences));
             sections.Add(new GuideSection("버전 · Export", RenderExport));
+            sections.Add(new GuideSection("Export 미니게임", RenderMiniGames));
             sections.Add(new GuideSection("오류 · 검증", RenderValidation));
         }
 
@@ -512,6 +513,20 @@ namespace CSVParserTool
             Note("참조 대상 컬럼이 현재 Export 버전에서 제외되면 참조 오류로 처리됩니다.");
         }
 
+        private void RenderMiniGames()
+        {
+            Heading("Export 미니게임");
+            Body("Export가 시작되면 별도 게임 창이 열립니다. 게임을 닫아도 Export는 그대로 계속 진행됩니다.");
+            Bullet("Export마다 등록된 미니게임 중 하나가 랜덤으로 선택됩니다.");
+            Bullet("배구는 AI와 7점 승부를 하며 기본 난이도는 어려움입니다.");
+            Bullet("상단 목록에서 게임을 바꾸거나 ‘다시 시작’으로 현재 게임을 초기화할 수 있습니다.");
+            Bullet("Export가 끝난 뒤에도 결과를 확인하면서 게임을 계속 플레이할 수 있습니다.");
+            Subheading("게임 추가");
+            Bullet("내장 게임은 ExportMiniGame 클래스를 상속하면 자동으로 등록됩니다.");
+            Bullet("게임 C# 소스를 추가하고 툴을 다시 빌드하면 DataToolGUI.exe 안에 함께 포함됩니다.");
+            Bullet("실행 폴더에 미니게임용 DLL이나 별도 리소스 폴더를 만들지 않습니다.");
+            Note("게임 추가 후 Release 빌드하면 기존 단일 EXE 배포 방식을 그대로 유지합니다.");
+        }
         private void RenderValidation()
         {
             Heading("Export 실패 조건");

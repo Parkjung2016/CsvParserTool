@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.WindowsAPICodePack.Dialogs;
 using Microsoft.WindowsAPICodePack.Taskbar;
+using CSVParserTool.MiniGames;
 
 namespace CSVParserTool
 {
@@ -85,6 +86,7 @@ namespace CSVParserTool
         private bool exportExcelPhaseRan;
         private bool exportHasTableFailure;
         private int exportActivePhaseIndex = -1;
+        private ExportMiniGameForm exportMiniGameForm;
 
         public Form1()
         {
@@ -231,7 +233,7 @@ namespace CSVParserTool
 
         private void Btn_Version_Click(object sender, EventArgs e) => ShowVersionDialog();
 
-        private void ShowVersionDialog()
+        private void ShowVersionDialog(bool captureOwner = true)
         {
             if (versionDialogOpen || IsDisposed)
                 return;
@@ -244,7 +246,7 @@ namespace CSVParserTool
                 {
                     if (Icon != null)
                         dialog.Icon = (Icon)Icon.Clone();
-                    ModalBlurBackdrop.ShowDialog(this, dialog);
+                    ModalBlurBackdrop.ShowDialog(this, dialog, captureOwner);
                 }
             }
             finally
@@ -485,6 +487,7 @@ namespace CSVParserTool
             Label_ExportStatus.ForeColor = UiTheme.TextPrimary;
             Label_ExportStatus.BackColor = UiTheme.SurfaceMuted;
             SegmentedExportProgress_Export.Invalidate();
+            exportMiniGameForm?.ApplyTheme();
 
             splitOuter.BackColor = UiTheme.Border;
             splitOuter.Panel1.BackColor = UiTheme.AppBackground;
@@ -727,6 +730,8 @@ namespace CSVParserTool
             exportCompletionAnimationTimer = null;
             exportNotifyIcon?.Dispose();
             exportNotifyIcon = null;
+            exportMiniGameForm?.Dispose();
+            exportMiniGameForm = null;
             previewCancellation?.Cancel();
             previewCancellation = null;
         }
@@ -838,7 +843,7 @@ namespace CSVParserTool
             {
                 ToolUpdateInfo update = await ToolUpdateService.CheckAsync(CancellationToken.None);
                 if (update?.IsNewer == true && !versionDialogShownThisSession && !IsDisposed && !Disposing)
-                    ShowVersionDialog();
+                    ShowVersionDialog(captureOwner: false);
             }
             catch (Exception ex)
             {
@@ -852,7 +857,7 @@ namespace CSVParserTool
             {
                 if (Icon != null)
                     welcome.Icon = (Icon)Icon.Clone();
-                DialogResult result = ModalBlurBackdrop.ShowDialog(this, welcome);
+                DialogResult result = ModalBlurBackdrop.ShowDialog(this, welcome, captureOwner: false);
                 if (result != DialogResult.Yes)
                     return;
             }
@@ -861,7 +866,7 @@ namespace CSVParserTool
             {
                 if (Icon != null)
                     guide.Icon = (Icon)Icon.Clone();
-                ModalBlurBackdrop.ShowDialog(this, guide);
+                ModalBlurBackdrop.ShowDialog(this, guide, captureOwner: false);
             }
         }
 
@@ -986,7 +991,7 @@ namespace CSVParserTool
                 string targetText = selectedOnly ? $"선택 {selectedTableStems.Count}개" : "전체";
                 AddLog($"데이터 Export 시작… ({targetText}, 버전 {exportVersion}, 원본 없는 이전 파일 삭제 {(Chk_RemoveOrphanArtifacts.Checked ? "ON" : "OFF")})", LogLevel.Info);
 
-                DataExportResult result = await Task.Run(() => DataExportService.RunExport(
+                Task<DataExportResult> exportTask = Task.Run(() => DataExportService.RunExport(
                     projectRootPath,
                     excelSourceFolderPath,
                     refresh,
@@ -995,6 +1000,9 @@ namespace CSVParserTool
                     exportVersion: exportVersion,
                     removeOrphanArtifacts: Chk_RemoveOrphanArtifacts.Checked,
                     selectedTableStems: selectedTableStems));
+
+                ShowExportMiniGame();
+                DataExportResult result = await exportTask;
 
                 FinishExportProgressUi(result);
 
@@ -1021,6 +1029,38 @@ namespace CSVParserTool
             }
         }
 
+        private void ShowExportMiniGame()
+        {
+            try
+            {
+                if (exportMiniGameForm == null || exportMiniGameForm.IsDisposed)
+                {
+                    exportMiniGameForm = new ExportMiniGameForm(message => AddLog("미니게임 등록: " + message, LogLevel.Warning));
+                    if (Icon != null)
+                        exportMiniGameForm.Icon = (Icon)Icon.Clone();
+                    exportMiniGameForm.FormClosed += (_, __) => exportMiniGameForm = null;
+                }
+
+                exportMiniGameForm.StartExport();
+                if (!exportMiniGameForm.Visible)
+                    exportMiniGameForm.ShowCentered(this);
+                else
+                    exportMiniGameForm.BringToFront();
+            }
+            catch (Exception ex)
+            {
+                exportMiniGameForm?.Dispose();
+                exportMiniGameForm = null;
+                AddLog("미니게임을 열지 못했습니다. Export는 계속 진행합니다: " + ex.Message, LogLevel.Warning);
+            }
+        }
+
+        private void CompleteExportMiniGame(bool success, string message)
+        {
+            if (exportMiniGameForm == null || exportMiniGameForm.IsDisposed)
+                return;
+            exportMiniGameForm.CompleteExport(success, message);
+        }
         private void BeginExportProgressUi()
         {
             ClearExportTaskbarNotification();
@@ -1048,6 +1088,7 @@ namespace CSVParserTool
                     SetExportStep(exportActivePhaseIndex, SegmentedPhaseState.Failed);
                 StartExportCompletionAnimation(success: false);
                 ShowExportTaskbarNotification(success: false);
+                CompleteExportMiniGame(false, Label_ExportStatus.Text);
                 return;
             }
 
@@ -1100,6 +1141,7 @@ namespace CSVParserTool
             bool exportSucceeded = result.Ok && result.FailedCount == 0;
             StartExportCompletionAnimation(exportSucceeded);
             ShowExportTaskbarNotification(exportSucceeded);
+            CompleteExportMiniGame(exportSucceeded, Label_ExportStatus.Text);
         }
 
         private void ReportExportProgress(DataExportProgressInfo info)
@@ -1112,6 +1154,12 @@ namespace CSVParserTool
                 BeginInvoke(new Action(() => ReportExportProgress(info)));
                 return;
             }
+
+            string miniGameProgress = info.Kind == DataExportProgressKind.TableCompleted
+                ? $"테이블 Export {info.CompletedCount}/{info.TotalCount}" +
+                  (string.IsNullOrWhiteSpace(info.ItemName) ? "" : $" · {info.ItemName}")
+                : info.PhaseLabel;
+            exportMiniGameForm?.UpdateExportProgress(miniGameProgress);
 
             switch (info.Kind)
             {

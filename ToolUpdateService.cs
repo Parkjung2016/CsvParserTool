@@ -34,7 +34,20 @@ namespace CSVParserTool
             typeof(ToolVersionInfo).Assembly.GetCustomAttribute<AssemblyProductAttribute>()?.Product
             ?? "PJDev Data Tool";
 
-        public static Version Version => Normalize(typeof(ToolVersionInfo).Assembly.GetName().Version);
+        private const int LegacyBuildNumberScale = 1000;
+
+        public static Version Version
+        {
+            get
+            {
+                Assembly assembly = typeof(ToolVersionInfo).Assembly;
+                string informationalVersion = assembly
+                    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                    ?.InformationalVersion;
+                return ResolveInstalledVersion(assembly.GetName().Version, informationalVersion);
+            }
+        }
+
         public static string VersionText => Format(Version);
 
         public static string UpdateDate =>
@@ -54,6 +67,37 @@ namespace CSVParserTool
 
         public static string Format(Version version) =>
             version == null ? "알 수 없음" : $"{version.Major}.{version.Minor}.{Math.Max(0, version.Build)}";
+
+        public static bool IsNewerThanInstalled(Version candidate) =>
+            candidate != null && candidate.CompareTo(Version) > 0;
+
+        internal static Version ResolveInstalledVersion(Version assemblyVersion, string informationalVersion)
+        {
+            Version rawAssembly = Normalize(assemblyVersion);
+            Version resolvedAssembly = NormalizeLegacyInstalledVersion(rawAssembly);
+            Version informational = ParseVersion(informationalVersion);
+            if (informational == null)
+                return resolvedAssembly;
+
+            Version resolvedInformational = NormalizeLegacyInstalledVersion(informational);
+            bool informationalLooksLikeLegacyDefault =
+                rawAssembly.Build >= LegacyBuildNumberScale
+                && resolvedInformational.Major == resolvedAssembly.Major
+                && resolvedInformational.Minor == resolvedAssembly.Minor
+                && resolvedInformational.Build == 0
+                && resolvedAssembly.Build > 0;
+
+            return informationalLooksLikeLegacyDefault ? resolvedAssembly : resolvedInformational;
+        }
+
+        private static Version NormalizeLegacyInstalledVersion(Version version)
+        {
+            // 구형 게시 빌드는 patch와 빌드 번호를 세 번째 구간에 붙여 기록했다.
+            // 예: 1.0.5123 = 1.0.5 + build 123. 릴리스 태그는 항상 1.0.6처럼 순수 SemVer다.
+            return version.Build >= LegacyBuildNumberScale
+                ? new Version(version.Major, version.Minor, version.Build / LegacyBuildNumberScale)
+                : version;
+        }
 
         private static Version Normalize(Version version) =>
             version == null
@@ -166,7 +210,7 @@ namespace CSVParserTool
                         + "/releases/download/" + Uri.EscapeDataString(tag)
                         + "/" + PreferredAssetName,
                     AssetName = PreferredAssetName,
-                    IsNewer = version > ToolVersionInfo.Version
+                    IsNewer = ToolVersionInfo.IsNewerThanInstalled(version)
                 };
                 cachedUpdateAt = checkedAt.ToUniversalTime();
             }
@@ -269,7 +313,7 @@ namespace CSVParserTool
                 NotesUrl = notesUrl,
                 DownloadUrl = downloadUrl,
                 AssetName = PreferredAssetName,
-                IsNewer = version > ToolVersionInfo.Version
+                IsNewer = ToolVersionInfo.IsNewerThanInstalled(version)
             };
         }
         public static async Task<string> DownloadAsync(

@@ -25,6 +25,7 @@ namespace CSVParserTool
             public string ThemeName = "Default";
             public string ExportVersion = "1.0.0";
             public bool RemoveOrphanArtifactsOnExport = true;
+            public Dictionary<string, int> MiniGameHighScores = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             public int Quality;
             public DateTime LastWriteTimeUtc;
         }
@@ -66,6 +67,31 @@ namespace CSVParserTool
         {
             get { EnsureLoaded(); return current.RemoveOrphanArtifactsOnExport; }
             set { EnsureLoaded(); current.RemoveOrphanArtifactsOnExport = value; }
+        }
+
+        public static int GetMiniGameHighScore(string gameId, string difficultyId = null)
+        {
+            EnsureLoaded();
+            string key = BuildMiniGameScoreKey(gameId, difficultyId);
+            lock (Sync)
+                return current.MiniGameHighScores.TryGetValue(key, out int score) ? score : 0;
+        }
+
+        /// <summary>메모리의 최고 기록만 갱신한다. 호출부에서 여러 갱신을 묶어 Save할 수 있다.</summary>
+        public static bool TryUpdateMiniGameHighScore(string gameId, string difficultyId, int score)
+        {
+            if (score < 0)
+                return false;
+
+            EnsureLoaded();
+            string key = BuildMiniGameScoreKey(gameId, difficultyId);
+            lock (Sync)
+            {
+                if (current.MiniGameHighScores.TryGetValue(key, out int previous) && previous >= score)
+                    return false;
+                current.MiniGameHighScores[key] = score;
+                return true;
+            }
         }
 
         public static void Load()
@@ -189,6 +215,21 @@ namespace CSVParserTool
                 if (projectRoot == null && excelSource == null && darkMode == null && themeName == null && exportVersion == null && removeOrphans == null)
                     return false;
 
+                var miniGameHighScores = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                if (fixedFormat)
+                {
+                    foreach (XmlNode scoreNode in document.DocumentElement.SelectNodes("MiniGameHighScores/Score"))
+                    {
+                        if (!(scoreNode is XmlElement scoreElement))
+                            continue;
+                        string key = scoreElement.GetAttribute("key");
+                        if (!string.IsNullOrWhiteSpace(key)
+                            && int.TryParse(scoreElement.GetAttribute("value"), out int value)
+                            && value >= 0)
+                            miniGameHighScores[key] = value;
+                    }
+                }
+
                 snapshot = new Snapshot
                 {
                     ProjectRootPath = projectRoot ?? string.Empty,
@@ -196,7 +237,8 @@ namespace CSVParserTool
                     DarkMode = bool.TryParse(darkMode, out bool dark) && dark,
                     ThemeName = string.IsNullOrWhiteSpace(themeName) ? "Default" : themeName,
                     ExportVersion = string.IsNullOrWhiteSpace(exportVersion) ? "1.0.0" : exportVersion,
-                    RemoveOrphanArtifactsOnExport = !bool.TryParse(removeOrphans, out bool remove) || remove
+                    RemoveOrphanArtifactsOnExport = !bool.TryParse(removeOrphans, out bool remove) || remove,
+                    MiniGameHighScores = miniGameHighScores
                 };
                 snapshot.Quality = CalculateQuality(snapshot);
                 return true;
@@ -223,7 +265,7 @@ namespace CSVParserTool
             string temporaryPath = path + ".tmp";
             var document = new XmlDocument { XmlResolver = null };
             XmlElement root = document.CreateElement("DataToolSettings");
-            root.SetAttribute("version", "1");
+            root.SetAttribute("version", "2");
             document.AppendChild(root);
             Append(document, root, "ProjectRootPath", snapshot.ProjectRootPath);
             Append(document, root, "ExcelSourceFolderPath", snapshot.ExcelSourceFolderPath);
@@ -231,6 +273,16 @@ namespace CSVParserTool
             Append(document, root, "ThemeName", snapshot.ThemeName);
             Append(document, root, "ExportVersion", snapshot.ExportVersion);
             Append(document, root, "RemoveOrphanArtifactsOnExport", snapshot.RemoveOrphanArtifactsOnExport.ToString());
+
+            XmlElement highScores = document.CreateElement("MiniGameHighScores");
+            foreach (KeyValuePair<string, int> item in snapshot.MiniGameHighScores.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                XmlElement score = document.CreateElement("Score");
+                score.SetAttribute("key", item.Key);
+                score.SetAttribute("value", item.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                highScores.AppendChild(score);
+            }
+            root.AppendChild(highScores);
 
             using (XmlWriter writer = XmlWriter.Create(temporaryPath, new XmlWriterSettings
             {
@@ -243,6 +295,13 @@ namespace CSVParserTool
             }
             File.Copy(temporaryPath, path, true);
             File.Delete(temporaryPath);
+        }
+
+        private static string BuildMiniGameScoreKey(string gameId, string difficultyId)
+        {
+            string game = string.IsNullOrWhiteSpace(gameId) ? "unknown" : gameId.Trim().ToLowerInvariant();
+            string difficulty = string.IsNullOrWhiteSpace(difficultyId) ? "default" : difficultyId.Trim().ToLowerInvariant();
+            return game + "|" + difficulty;
         }
 
         private static void Append(XmlDocument document, XmlElement root, string name, string value)

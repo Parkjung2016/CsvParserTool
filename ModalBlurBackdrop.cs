@@ -42,12 +42,14 @@ namespace CSVParserTool
             }
         }
 
-        public static DialogResult ShowDialog(Form owner, Form dialog)
+        public static DialogResult ShowDialog(Form owner, Form dialog, bool captureOwner = true)
         {
             if (owner == null || dialog == null || owner.IsDisposed)
                 return dialog?.ShowDialog() ?? DialogResult.Cancel;
 
-            Bitmap snapshot = TryCreateBlurredSnapshot(owner);
+            // Startup dialogs may appear after an async update check while another app is foreground.
+            // Never capture that app into an automatic startup dialog backdrop.
+            Bitmap snapshot = captureOwner ? TryCreateBlurredSnapshot(owner) : null;
             using (var overlay = new BlurOverlayPanel(snapshot))
             {
                 overlay.Bounds = owner.ClientRectangle;
