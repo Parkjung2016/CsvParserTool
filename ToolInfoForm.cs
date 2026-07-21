@@ -49,6 +49,7 @@ namespace CSVParserTool
         private readonly Button closeButton = new Button();
         private readonly FlowLayoutPanel navigation = new FlowLayoutPanel();
         private readonly Panel contentHost = new BufferedPanel();
+        private readonly MascotPresenter mascot = new MascotPresenter();
         private readonly FlowLayoutPanel content = new BufferedFlowLayoutPanel();
         private readonly List<Button> navigationButtons = new List<Button>();
         private readonly List<GuideSection> sections = new List<GuideSection>();
@@ -143,6 +144,10 @@ namespace CSVParserTool
             navigation.Padding = new Padding(14, 18, 14, 14);
             navigation.AutoScroll = true;
 
+            mascot.Size = new Size(156, 150);
+            mascot.Margin = new Padding(3, 0, 0, 12);
+            mascot.AccessibleName = "Data Tool 사용 안내 마스코트";
+            navigation.Controls.Add(mascot);
             for (int i = 0; i < sections.Count; i++)
             {
                 int index = i;
@@ -203,6 +208,7 @@ namespace CSVParserTool
             subtitle.ForeColor = UiTheme.TextMuted;
 
             navigation.BackColor = UiTheme.SurfaceMuted;
+            mascot.BackColor = Color.Transparent;
             contentHost.BackColor = UiTheme.Surface;
             content.BackColor = UiTheme.Surface;
             content.ForeColor = UiTheme.TextPrimary;
@@ -227,6 +233,7 @@ namespace CSVParserTool
             StopContentAnimation();
 
             selectedSectionIndex = index;
+            SetMascotForSection(index);
             for (int i = 0; i < navigationButtons.Count; i++)
             {
                 bool selected = i == selectedSectionIndex;
@@ -249,6 +256,27 @@ namespace CSVParserTool
 
             if (animateContent)
                 StartContentAnimation();
+        }
+        private void SetMascotForSection(int index)
+        {
+            switch (index)
+            {
+                case 0:
+                    mascot.SetSequence(MascotPose.Hello, MascotPose.Point);
+                    break;
+                case 4:
+                case 6:
+                    mascot.SetSequence(MascotPose.Celebrate, MascotPose.Hello);
+                    break;
+                case 1:
+                case 2:
+                case 7:
+                    mascot.SetSequence(MascotPose.Read, MascotPose.Point);
+                    break;
+                default:
+                    mascot.SetSequence(MascotPose.Point, MascotPose.Read);
+                    break;
+            }
         }
         private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled && UiTheme.CurrentTheme == AppTheme.Default;
 

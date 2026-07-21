@@ -78,6 +78,7 @@ namespace CSVParserTool
         private List<LogEntry> allLogs = new List<LogEntry>();
         private LogLevel? currentFilter = null;
         private bool splitContainersInitialized;
+        private bool startupDialogsScheduled;
         private readonly Dictionary<string, ListViewItem> exportResultItems =
             new Dictionary<string, ListViewItem>(StringComparer.OrdinalIgnoreCase);
 
@@ -782,10 +783,49 @@ namespace CSVParserTool
             if (Combo_LogFilter.Items.Count > 0 && Combo_LogFilter.SelectedIndex < 0)
                 Combo_LogFilter.SelectedIndex = 0;
 
-            BeginInvoke(new Action(RunStartupDialogs));
+            if (!startupDialogsScheduled)
+            {
+                startupDialogsScheduled = true;
+                Application.Idle += ShowStartupDialogsAfterFirstPaint;
+            }
         }
 
 
+        private void ShowStartupDialogsAfterFirstPaint(object sender, EventArgs e)
+        {
+            Application.Idle -= ShowStartupDialogsAfterFirstPaint;
+            if (IsDisposed || Disposing || !Visible)
+                return;
+
+            CompleteInitialLayout();
+            BeginInvoke(new Action(RunStartupDialogs));
+        }
+
+        private void CompleteInitialLayout()
+        {
+            SuspendLayout();
+            try
+            {
+                PerformLayout();
+                Panel_Header.PerformLayout();
+                tableHeader.PerformLayout();
+                Panel_Top.PerformLayout();
+                tableTop.PerformLayout();
+                Panel_Bottom.PerformLayout();
+                tableBottom.PerformLayout();
+                Panel_MainContent.PerformLayout();
+                splitOuter.PerformLayout();
+                splitWork.PerformLayout();
+                LayoutSplitContainers();
+            }
+            finally
+            {
+                ResumeLayout(true);
+            }
+
+            Invalidate(true);
+            Update();
+        }
         private async void RunStartupDialogs()
         {
             if (ToolSettingsStore.IsFirstRun)
@@ -876,6 +916,7 @@ namespace CSVParserTool
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            Application.Idle -= ShowStartupDialogsAfterFirstPaint;
             excelDirWatcher?.Dispose();
             excelDirWatcher = null;
             listReloadDebounceTimer?.Stop();

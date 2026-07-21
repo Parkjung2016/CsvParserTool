@@ -18,7 +18,7 @@ namespace CSVParserTool
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
-            ClientSize = new Size(570, 430);
+            ClientSize = new Size(640, 560);
             Padding = new Padding(30, 26, 30, 24);
             Font = UiTheme.FontUi;
             BackColor = UiTheme.AppBackground;
@@ -41,18 +41,18 @@ namespace CSVParserTool
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-            var badge = new Label
+            var mascot = new MascotPresenter
             {
-                Text = "i",
-                Size = new Size(48, 48),
-                Font = new Font("Segoe UI Semibold", 20F, FontStyle.Regular, GraphicsUnit.Point),
-                ForeColor = Color.White,
-                BackColor = UiTheme.Accent,
-                TextAlign = ContentAlignment.MiddleCenter,
-                Margin = new Padding(0, 0, 0, 14),
-                Anchor = AnchorStyles.None
+                Size = new Size(158, 158),
+                Margin = new Padding(0, 0, 0, 6),
+                Anchor = AnchorStyles.None,
+                AccessibleName = "Data Tool 마스코트"
             };
-            var title = new Label
+            mascot.SetSequence(
+                MascotPose.Hello,
+                MascotPose.Point,
+                MascotPose.Hello,
+                MascotPose.Celebrate);            var title = new Label
             {
                 AutoSize = true,
                 Text = "처음 오셨군요!",
@@ -65,7 +65,7 @@ namespace CSVParserTool
             var subtitle = new Label
             {
                 AutoSize = true,
-                MaximumSize = new Size(500, 0),
+                MaximumSize = new Size(560, 0),
                 Text = "사용 안내를 먼저 확인하면 테이블을 더 빠르고 정확하게 만들 수 있습니다.",
                 ForeColor = UiTheme.TextSecondary,
                 TextAlign = ContentAlignment.MiddleCenter,
@@ -127,7 +127,7 @@ namespace CSVParserTool
             actions.Controls.Add(guideButton);
             actions.Controls.Add(continueButton);
 
-            root.Controls.Add(badge, 0, 0);
+            root.Controls.Add(mascot, 0, 0);
             root.Controls.Add(title, 0, 1);
             root.Controls.Add(subtitle, 0, 2);
             root.Controls.Add(guideCard, 0, 3);

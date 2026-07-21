@@ -112,6 +112,10 @@
 
 		<EmbeddedResource Include="assets\pjdev-icon-source-square.png" />
         <EmbeddedResource Include="assets\themes\*.png" />
+        <EmbeddedResource Include="assets\mascot\mascot-hello.png" />
+        <EmbeddedResource Include="assets\mascot\mascot-point.png" />
+        <EmbeddedResource Include="assets\mascot\mascot-celebrate.png" />
+        <EmbeddedResource Include="assets\mascot\mascot-read.png" />
 
 		<None Update="Properties\Settings.settings">
 
