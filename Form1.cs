@@ -212,16 +212,32 @@ namespace CSVParserTool
             FormClosed += Form1_FormClosed;
         }
 
-        private void Btn_Version_Click(object sender, EventArgs e)
+        private bool versionDialogOpen;
+        private bool versionDialogShownThisSession;
+
+        private void Btn_Version_Click(object sender, EventArgs e) => ShowVersionDialog();
+
+        private void ShowVersionDialog()
         {
-            using (var dialog = new ToolVersionForm())
+            if (versionDialogOpen || IsDisposed)
+                return;
+
+            versionDialogOpen = true;
+            versionDialogShownThisSession = true;
+            try
             {
-                if (Icon != null)
-                    dialog.Icon = (Icon)Icon.Clone();
-                ModalBlurBackdrop.ShowDialog(this, dialog);
+                using (var dialog = new ToolVersionForm())
+                {
+                    if (Icon != null)
+                        dialog.Icon = (Icon)Icon.Clone();
+                    ModalBlurBackdrop.ShowDialog(this, dialog);
+                }
+            }
+            finally
+            {
+                versionDialogOpen = false;
             }
         }
-
         private void Btn_Info_Click(object sender, EventArgs e)
         {
             using (var dialog = new ToolInfoForm())
@@ -661,6 +677,48 @@ namespace CSVParserTool
 
             if (Combo_LogFilter.Items.Count > 0 && Combo_LogFilter.SelectedIndex < 0)
                 Combo_LogFilter.SelectedIndex = 0;
+
+            BeginInvoke(new Action(RunStartupDialogs));
+        }
+
+
+        private async void RunStartupDialogs()
+        {
+            if (ToolSettingsStore.IsFirstRun)
+                ShowFirstRunWelcome();
+
+            if (IsDisposed || Disposing)
+                return;
+
+            try
+            {
+                ToolUpdateInfo update = await ToolUpdateService.CheckAsync(CancellationToken.None);
+                if (update?.IsNewer == true && !versionDialogShownThisSession && !IsDisposed && !Disposing)
+                    ShowVersionDialog();
+            }
+            catch (Exception ex)
+            {
+                if (!IsDisposed && !Disposing)
+                    AddLog("시작 시 업데이트 확인 실패: " + ex.Message, LogLevel.Warning);
+            }
+        }
+        private void ShowFirstRunWelcome()
+        {
+            using (var welcome = new FirstRunWelcomeForm())
+            {
+                if (Icon != null)
+                    welcome.Icon = (Icon)Icon.Clone();
+                DialogResult result = ModalBlurBackdrop.ShowDialog(this, welcome);
+                if (result != DialogResult.Yes)
+                    return;
+            }
+
+            using (var guide = new ToolInfoForm())
+            {
+                if (Icon != null)
+                    guide.Icon = (Icon)Icon.Clone();
+                ModalBlurBackdrop.ShowDialog(this, guide);
+            }
         }
 
         /// <summary>사이드바·미리보기·하단 로그 패널 초기 비율.</summary>

@@ -15,6 +15,8 @@ namespace CSVParserTool
         private static Snapshot current = new Snapshot();
         private static bool loaded;
 
+        public static bool IsFirstRun { get; private set; }
+
         private sealed class Snapshot
         {
             public string ProjectRootPath = string.Empty;
@@ -69,6 +71,7 @@ namespace CSVParserTool
 
                 try
                 {
+                    IsFirstRun = !File.Exists(SettingsFilePath);
                     if (!TryReadSnapshot(SettingsFilePath, out Snapshot snapshot))
                     {
                         snapshot = FindBestLegacySnapshot() ?? new Snapshot();

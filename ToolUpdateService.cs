@@ -65,16 +65,19 @@ namespace CSVParserTool
     {
         private const string LatestReleaseFeed = "https://github.com/Parkjung2016/CsvParserTool/releases.atom";
         private const string PreferredAssetName = "Tool.zip";
+        private const string UpdateCacheFileName = "DataTool.update-cache.xml";
         private static readonly TimeSpan CheckCacheDuration = TimeSpan.FromMinutes(15);
         private static readonly SemaphoreSlim CheckLock = new SemaphoreSlim(1, 1);
         private static ToolUpdateInfo cachedUpdate;
         private static DateTimeOffset cachedUpdateAt;
+        private static bool persistentCacheLoaded;
 
         public static async Task<ToolUpdateInfo> CheckAsync(
             CancellationToken cancellationToken,
             bool forceRefresh = false)
         {
             ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+            EnsurePersistentCacheLoaded();
             if (!forceRefresh && IsFreshCache())
                 return cachedUpdate;
 
@@ -95,6 +98,7 @@ namespace CSVParserTool
                             ToolUpdateInfo update = ReadLatestReleaseFromAtom(stream);
                             cachedUpdate = update;
                             cachedUpdateAt = DateTimeOffset.UtcNow;
+                            TryWritePersistentCache(update, cachedUpdateAt);
                             return update;
                         }
                     }
@@ -111,6 +115,113 @@ namespace CSVParserTool
             }
         }
 
+        private static string UpdateCacheFilePath => Path.Combine(
+            Path.GetDirectoryName(typeof(ToolUpdateService).Assembly.Location),
+            UpdateCacheFileName);
+
+        private static void EnsurePersistentCacheLoaded()
+        {
+            if (persistentCacheLoaded)
+                return;
+            persistentCacheLoaded = true;
+
+            try
+            {
+                string path = UpdateCacheFilePath;
+                if (!File.Exists(path))
+                    return;
+
+                var document = new XmlDocument { XmlResolver = null };
+                using (XmlReader reader = XmlReader.Create(path, new XmlReaderSettings
+                {
+                    DtdProcessing = DtdProcessing.Prohibit,
+                    IgnoreComments = true,
+                    IgnoreWhitespace = true
+                }))
+                {
+                    document.Load(reader);
+                }
+
+                XmlElement root = document.DocumentElement;
+                Version version = ToolVersionInfo.ParseVersion(root?.SelectSingleNode("Version")?.InnerText);
+                string checkedAtText = root?.SelectSingleNode("CheckedAtUtc")?.InnerText;
+                string notesUrl = root?.SelectSingleNode("NotesUrl")?.InnerText;
+                if (version == null
+                    || !DateTimeOffset.TryParse(checkedAtText, out DateTimeOffset checkedAt)
+                    || !IsAllowedGitHubUrl(notesUrl))
+                    return;
+
+                var notesUri = new Uri(notesUrl);
+                string tag = Uri.UnescapeDataString(notesUri.Segments.LastOrDefault()?.Trim('/') ?? string.Empty);
+                if (string.IsNullOrWhiteSpace(tag))
+                    return;
+
+                cachedUpdate = new ToolUpdateInfo
+                {
+                    Version = version,
+                    VersionText = ToolVersionInfo.Format(version),
+                    PublishedAt = root.SelectSingleNode("PublishedAt")?.InnerText ?? "확인할 수 없음",
+                    NotesUrl = notesUrl,
+                    DownloadUrl = ToolVersionInfo.RepositoryUrl
+                        + "/releases/download/" + Uri.EscapeDataString(tag)
+                        + "/" + PreferredAssetName,
+                    AssetName = PreferredAssetName,
+                    IsNewer = version > ToolVersionInfo.Version
+                };
+                cachedUpdateAt = checkedAt.ToUniversalTime();
+            }
+            catch
+            {
+                // 캐시는 선택 사항이므로 손상되었거나 읽을 수 없으면 온라인 확인으로 진행한다.
+            }
+        }
+
+        private static void TryWritePersistentCache(ToolUpdateInfo update, DateTimeOffset checkedAt)
+        {
+            if (update == null)
+                return;
+
+            try
+            {
+                string path = UpdateCacheFilePath;
+                string temporaryPath = path + ".tmp";
+                var document = new XmlDocument { XmlResolver = null };
+                XmlElement root = document.CreateElement("DataToolUpdateCache");
+                root.SetAttribute("version", "1");
+                document.AppendChild(root);
+                AppendCacheValue(document, root, "CheckedAtUtc", checkedAt.UtcDateTime.ToString("O"));
+                AppendCacheValue(document, root, "Version", update.VersionText);
+                AppendCacheValue(document, root, "PublishedAt", update.PublishedAt);
+                AppendCacheValue(document, root, "NotesUrl", update.NotesUrl);
+
+                using (XmlWriter writer = XmlWriter.Create(temporaryPath, new XmlWriterSettings
+                {
+                    Encoding = new UTF8Encoding(false),
+                    Indent = true,
+                    NewLineChars = Environment.NewLine
+                }))
+                {
+                    document.Save(writer);
+                }
+                File.Copy(temporaryPath, path, true);
+                File.Delete(temporaryPath);
+            }
+            catch
+            {
+                // 쓰기 권한이 없어도 현재 실행 중의 메모리 캐시는 계속 사용한다.
+            }
+        }
+
+        private static void AppendCacheValue(
+            XmlDocument document,
+            XmlElement root,
+            string name,
+            string value)
+        {
+            XmlElement element = document.CreateElement(name);
+            element.InnerText = value ?? string.Empty;
+            root.AppendChild(element);
+        }
         private static bool IsFreshCache() =>
             cachedUpdate != null && DateTimeOffset.UtcNow - cachedUpdateAt < CheckCacheDuration;
 
