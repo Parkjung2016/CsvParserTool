@@ -29,6 +29,7 @@ namespace CSVParserTool
         private const int maxLogLines = 300;
         private readonly Button Btn_Info = new Button();
         private readonly Button Btn_Version = new Button();
+        private readonly Button Btn_Theme = new Button();
         private readonly Button Btn_ExportSelected = new Button();
         private readonly Button Btn_EnumCatalog = new Button();
         private readonly Button Btn_CheckAll = new Button();
@@ -66,6 +67,7 @@ namespace CSVParserTool
         private CancellationTokenSource previewCancellation;
         private readonly SemaphoreSlim previewGenerationLock = new SemaphoreSlim(1, 1);
         private string currentPreviewCode = "";
+        private int themeContentRefreshVersion;
 
         private sealed class FileListEntry
         {
@@ -89,7 +91,7 @@ namespace CSVParserTool
             InitializeInfoButton();
 
             bool darkMode = ToolSettingsStore.DarkMode;
-            UiTheme.SetDarkMode(darkMode);
+            UiTheme.SetTheme(UiTheme.ParseTheme(ToolSettingsStore.ThemeName), darkMode);
             Chk_DarkMode.Checked = darkMode;
 
             ApplyUiTheme();
@@ -98,12 +100,13 @@ namespace CSVParserTool
 
         private void InitializeInfoButton()
         {
-            tableHeader.ColumnCount = 7;
+            tableHeader.ColumnCount = 8;
             tableHeader.ColumnStyles.Add(new ColumnStyle());
             tableHeader.ColumnStyles.Add(new ColumnStyle());
             tableHeader.ColumnStyles.Add(new ColumnStyle());
-            tableHeader.SetColumn(Chk_DarkMode, 4);
-            tableHeader.SetColumn(Btn_DataSetting, 6);
+            tableHeader.ColumnStyles.Add(new ColumnStyle());
+            tableHeader.SetColumn(Chk_DarkMode, 5);
+            tableHeader.SetColumn(Btn_DataSetting, 7);
             Btn_DataSetting.Text = "전체 Export";
 
             Btn_Version.Name = "Btn_Version";
@@ -126,6 +129,16 @@ namespace CSVParserTool
             Btn_Info.Click += Btn_Info_Click;
             tableHeader.Controls.Add(Btn_Info, 3, 0);
             tableHeader.SetRowSpan(Btn_Info, 2);
+            Btn_Theme.Name = "Btn_Theme";
+            Btn_Theme.Text = "테마";
+            Btn_Theme.AccessibleName = "작업 공간 테마 선택";
+            Btn_Theme.Anchor = AnchorStyles.Right;
+            Btn_Theme.AutoSize = true;
+            Btn_Theme.Margin = new Padding(0, 0, 8, 0);
+            Btn_Theme.TabIndex = 2;
+            Btn_Theme.Click += Btn_Theme_Click;
+            tableHeader.Controls.Add(Btn_Theme, 4, 0);
+            tableHeader.SetRowSpan(Btn_Theme, 2);
 
             Btn_ExportSelected.Name = "Btn_ExportSelected";
             Btn_ExportSelected.Text = "선택 Export";
@@ -135,7 +148,7 @@ namespace CSVParserTool
             Btn_ExportSelected.Margin = new Padding(0, 0, 8, 0);
             Btn_ExportSelected.TabIndex = 3;
             Btn_ExportSelected.Click += Btn_ExportSelected_Click;
-            tableHeader.Controls.Add(Btn_ExportSelected, 5, 0);
+            tableHeader.Controls.Add(Btn_ExportSelected, 6, 0);
             tableHeader.SetRowSpan(Btn_ExportSelected, 2);
 
             var listHeaderLayout = new TableLayoutPanel
@@ -238,6 +251,21 @@ namespace CSVParserTool
                 versionDialogOpen = false;
             }
         }
+        private void Btn_Theme_Click(object sender, EventArgs e)
+        {
+            using (var dialog = new ThemeSelectionForm(UiTheme.CurrentTheme))
+            {
+                if (Icon != null)
+                    dialog.Icon = (Icon)Icon.Clone();
+                if (ModalBlurBackdrop.ShowDialog(this, dialog) != DialogResult.OK)
+                    return;
+
+                UiTheme.SetTheme(dialog.SelectedTheme, Chk_DarkMode.Checked);
+                ToolSettingsStore.ThemeName = dialog.SelectedTheme.ToString();
+                ToolSettingsStore.Save();
+                ApplyUiTheme();
+            }
+        }
         private void Btn_Info_Click(object sender, EventArgs e)
         {
             using (var dialog = new ToolInfoForm())
@@ -254,6 +282,11 @@ namespace CSVParserTool
             TrySetHeaderIcon();
         }
 
+        private void ApplyThemeHeaderIcon()
+        {
+            // Main header always uses the stable app icon. Theme artwork is only shown in the picker.
+            TrySetHeaderIcon();
+        }
         private void TrySetFormIcon()
         {
             try
@@ -318,14 +351,11 @@ namespace CSVParserTool
         private void Chk_DarkMode_CheckedChanged(object sender, EventArgs e)
         {
             bool darkMode = Chk_DarkMode.Checked;
-            UiTheme.SetDarkMode(darkMode);
+            UiTheme.SetTheme(UiTheme.ParseTheme(ToolSettingsStore.ThemeName), darkMode);
             ToolSettingsStore.DarkMode = darkMode;
             ToolSettingsStore.Save();
 
             ApplyUiTheme();
-            SetPreviewCode(currentPreviewCode);
-            RefreshLogDisplay();
-            StyleExportResultRows();
         }
 
         private void SetPreviewCode(string code)
@@ -335,6 +365,48 @@ namespace CSVParserTool
         }
 
         private void ApplyUiTheme()
+        {
+            if (!IsHandleCreated)
+            {
+                ApplyUiThemeCore();
+                return;
+            }
+
+            SuspendLayout();
+            SendMessage(Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
+            try
+            {
+                ApplyUiThemeCore();
+                SetPreviewCode(currentPreviewCode);
+                RefreshLogDisplay();
+                StyleExportResultRows();
+            }
+            finally
+            {
+                ResumeLayout(true);
+                LayoutSplitContainers();
+                SendMessage(Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
+                Invalidate(true);
+                Update();
+            }
+
+            QueueThemeContentRefresh();
+        }
+
+        private void QueueThemeContentRefresh()
+        {
+            int version = ++themeContentRefreshVersion;
+            BeginInvoke(new Action(() =>
+            {
+                if (IsDisposed || Disposing || version != themeContentRefreshVersion)
+                    return;
+
+                SetPreviewCode(currentPreviewCode);
+                RefreshLogDisplay();
+                StyleExportResultRows();
+            }));
+        }
+        private void ApplyUiThemeCore()
         {
             BackColor = UiTheme.AppBackground;
             Font = UiTheme.FontUi;
@@ -351,9 +423,13 @@ namespace CSVParserTool
             Label_AppSubtitle.ForeColor = UiTheme.TextMuted;
 
             UiTheme.StyleCheckBox(Chk_DarkMode);
-            Chk_DarkMode.BackColor = UiTheme.HeaderBackground;
+            Chk_DarkMode.BackColor = Color.Transparent;
 
             PictureBox_HeaderIcon.BackColor = Color.Transparent;
+            tableHeader.BackColor = Color.Transparent;
+            tableTop.BackColor = Color.Transparent;
+            tableBottom.BackColor = Color.Transparent;
+            ApplyThemeHeaderIcon();
 
             UiTheme.StyleSectionLabel(Label_SectionList);
             UiTheme.StyleSectionLabel(Label_SectionPreview);
@@ -373,12 +449,13 @@ namespace CSVParserTool
             UiTheme.StyleSecondaryButton(Btn_EnumCatalog);
             UiTheme.StyleSecondaryButton(Btn_Info);
             UiTheme.StyleSecondaryButton(Btn_Version);
+            UiTheme.StyleSecondaryButton(Btn_Theme);
             Btn_Info.Font = new Font("Segoe UI Semibold", 11F, FontStyle.Regular, GraphicsUnit.Point);
             Btn_Info.Padding = Padding.Empty;
-            Btn_Info.MinimumSize = new Size(34, 34);
+            Btn_Info.MinimumSize = UiTheme.CurrentTheme == AppTheme.Default ? new Size(34, 34) : new Size(40, 40);
             UiTheme.StyleSecondaryButton(Btn_CheckAll);
             UiTheme.StyleSecondaryButton(Btn_UncheckAll);
-            Btn_Info.Size = new Size(34, 34);
+            Btn_Info.Size = UiTheme.CurrentTheme == AppTheme.Default ? new Size(34, 34) : new Size(40, 40);
             UiTheme.StyleSecondaryButton(Btn_SelectProjectRoot);
             UiTheme.StyleSecondaryButton(Btn_SelectExcelFolder);
             UiTheme.StyleSecondaryButton(Btn_OpenOutputFolder);
@@ -416,12 +493,35 @@ namespace CSVParserTool
             splitWork.Panel2.BackColor = UiTheme.AppBackground;
             Panel_LogSection.BackColor = UiTheme.AppBackground;
             Panel_MainContent.BackColor = UiTheme.AppBackground;
+            ApplyDimensionalLayout();
         }
 
+        private void ApplyDimensionalLayout()
+        {
+            bool dimensional = UiTheme.CurrentTheme != AppTheme.Default;
+            MinimumSize = dimensional ? new Size(1000, 700) : new Size(920, 580);
+            Panel_Header.MinimumSize = dimensional ? new Size(0, 84) : Size.Empty;
+            Panel_Top.MinimumSize = new Size(0, dimensional ? 188 : 166);
+            Panel_Bottom.MinimumSize = dimensional ? new Size(0, 70) : Size.Empty;
+            splitOuter.Panel1MinSize = dimensional ? 150 : 180;
+            splitOuter.Panel2MinSize = dimensional ? 140 : 180;
+            splitWork.Panel1MinSize = dimensional ? 220 : 200;
+            splitWork.Panel2MinSize = dimensional ? 300 : 280;
+            Panel_MainContent.Padding = dimensional
+                ? new Padding(18, 12, 18, 14)
+                : new Padding(12, 4, 12, 4);
+            splitWork.SplitterWidth = dimensional ? 12 : 6;
+            splitOuter.SplitterWidth = dimensional ? 12 : 6;
+            splitWork.Panel1.Padding = dimensional ? new Padding(0, 0, 10, 0) : new Padding(0, 0, 8, 0);
+            splitWork.Panel2.Padding = dimensional ? new Padding(10, 0, 0, 0) : new Padding(8, 0, 0, 0);
+            Panel_ListHeader.Height = dimensional ? 88 : 80;
+            Panel_LogHeader.Height = dimensional ? 38 : 32;
+            Label_SectionPreview.Height = dimensional ? 32 : 28;
+        }
         private void StartExportCompletionAnimation(bool success)
         {
             StopExportCompletionAnimation(resetColors: true);
-            if (!SystemInformation.IsMenuAnimationEnabled)
+            if (!SystemInformation.IsMenuAnimationEnabled || UiTheme.CurrentTheme != AppTheme.Default)
                 return;
 
             exportCompletionAnimationFrame = 0;
@@ -656,6 +756,10 @@ namespace CSVParserTool
             public uint Timeout;
         }
 
+        private const int WmSetRedraw = 0x000B;
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr windowHandle, int message, IntPtr wParam, IntPtr lParam);
         private const uint FlashWindowStop = 0;
         private const uint FlashWindowTray = 0x00000002;
         private const uint FlashWindowTimerNoForeground = 0x0000000C;
@@ -727,19 +831,32 @@ namespace CSVParserTool
             if (!IsHandleCreated || splitOuter.Width <= 0 || splitWork.Width <= 0)
                 return;
 
-            const int sidebarWidth = 340;
             int maxList = splitWork.Width - splitWork.Panel2MinSize - splitWork.SplitterWidth;
-            int listDist = Math.Max(splitWork.Panel1MinSize, Math.Min(sidebarWidth, maxList));
-            if (listDist > 0)
-                splitWork.SplitterDistance = listDist;
+            if (maxList >= splitWork.Panel1MinSize)
+            {
+                int desiredList = Math.Max(260, Math.Min(360, (int)(splitWork.Width * 0.30F)));
+                splitWork.SplitterDistance = Math.Min(maxList, Math.Max(splitWork.Panel1MinSize, desiredList));
+            }
 
-            int logHeight = Panel_ExportProgress.Visible ? 300 : 200;
             int maxWork = splitOuter.Height - splitOuter.Panel2MinSize - splitOuter.SplitterWidth;
-            int workDist = Math.Max(splitOuter.Panel1MinSize, maxWork - logHeight);
-            if (workDist > 0)
-                splitOuter.SplitterDistance = workDist;
+            if (maxWork >= splitOuter.Panel1MinSize)
+            {
+                int desiredLog = Panel_ExportProgress.Visible
+                    ? Math.Max(220, Math.Min(320, (int)(splitOuter.Height * 0.42F)))
+                    : Math.Max(180, Math.Min(240, (int)(splitOuter.Height * 0.30F)));
+                int desiredWork = splitOuter.Height - splitOuter.SplitterWidth - desiredLog;
+                splitOuter.SplitterDistance = Math.Min(maxWork, Math.Max(splitOuter.Panel1MinSize, desiredWork));
+            }
         }
 
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (!IsHandleCreated || WindowState == FormWindowState.Minimized)
+                return;
+
+            LayoutSplitContainers();
+        }
         private void Form1_Load(object sender, EventArgs e)
         {
             projectRootPath = ToolSettingsStore.ProjectRootPath ?? "";

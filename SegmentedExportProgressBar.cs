@@ -208,7 +208,7 @@ namespace CSVParserTool
 
         private void UpdateMarqueeTimer()
         {
-            if (!SystemInformation.IsMenuAnimationEnabled)
+            if (!SystemInformation.IsMenuAnimationEnabled || UiTheme.CurrentTheme != AppTheme.Default)
             {
                 for (int i = 0; i < PhaseCount; i++)
                     _displayProgress[i] = _progress[i];

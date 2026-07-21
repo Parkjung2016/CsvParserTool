@@ -111,6 +111,7 @@
 	<ItemGroup>
 
 		<EmbeddedResource Include="assets\pjdev-icon-source-square.png" />
+        <EmbeddedResource Include="assets\themes\*.png" />
 
 		<None Update="Properties\Settings.settings">
 

@@ -22,6 +22,7 @@ namespace CSVParserTool
             public string ProjectRootPath = string.Empty;
             public string ExcelSourceFolderPath = string.Empty;
             public bool DarkMode;
+            public string ThemeName = "Default";
             public string ExportVersion = "1.0.0";
             public bool RemoveOrphanArtifactsOnExport = true;
             public int Quality;
@@ -48,6 +49,11 @@ namespace CSVParserTool
         {
             get { EnsureLoaded(); return current.DarkMode; }
             set { EnsureLoaded(); current.DarkMode = value; }
+        }
+        public static string ThemeName
+        {
+            get { EnsureLoaded(); return current.ThemeName; }
+            set { EnsureLoaded(); current.ThemeName = string.IsNullOrWhiteSpace(value) ? "Default" : value; }
         }
 
         public static string ExportVersion
@@ -177,9 +183,10 @@ namespace CSVParserTool
                 string projectRoot = Read("ProjectRootPath");
                 string excelSource = Read("ExcelSourceFolderPath");
                 string darkMode = Read("DarkMode");
+                string themeName = Read("ThemeName");
                 string exportVersion = Read("ExportVersion");
                 string removeOrphans = Read("RemoveOrphanArtifactsOnExport");
-                if (projectRoot == null && excelSource == null && darkMode == null && exportVersion == null && removeOrphans == null)
+                if (projectRoot == null && excelSource == null && darkMode == null && themeName == null && exportVersion == null && removeOrphans == null)
                     return false;
 
                 snapshot = new Snapshot
@@ -187,6 +194,7 @@ namespace CSVParserTool
                     ProjectRootPath = projectRoot ?? string.Empty,
                     ExcelSourceFolderPath = excelSource ?? string.Empty,
                     DarkMode = bool.TryParse(darkMode, out bool dark) && dark,
+                    ThemeName = string.IsNullOrWhiteSpace(themeName) ? "Default" : themeName,
                     ExportVersion = string.IsNullOrWhiteSpace(exportVersion) ? "1.0.0" : exportVersion,
                     RemoveOrphanArtifactsOnExport = !bool.TryParse(removeOrphans, out bool remove) || remove
                 };
@@ -220,6 +228,7 @@ namespace CSVParserTool
             Append(document, root, "ProjectRootPath", snapshot.ProjectRootPath);
             Append(document, root, "ExcelSourceFolderPath", snapshot.ExcelSourceFolderPath);
             Append(document, root, "DarkMode", snapshot.DarkMode.ToString());
+            Append(document, root, "ThemeName", snapshot.ThemeName);
             Append(document, root, "ExportVersion", snapshot.ExportVersion);
             Append(document, root, "RemoveOrphanArtifactsOnExport", snapshot.RemoveOrphanArtifactsOnExport.ToString());
 

@@ -250,7 +250,7 @@ namespace CSVParserTool
             if (animateContent)
                 StartContentAnimation();
         }
-        private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled;
+        private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled && UiTheme.CurrentTheme == AppTheme.Default;
 
         private void ToolInfoForm_Shown(object sender, EventArgs e)
         {
@@ -352,6 +352,7 @@ namespace CSVParserTool
             Step("3", "데이터를 작성하고 미리보기에서 생성 코드를 확인합니다.");
             Step("4", "Export를 실행해 게임에서 사용할 데이터 파일과 C# 코드를 생성합니다.");
             Note("새 XLSX 이름에 DT_를 입력하지 않아도 자동으로 붙습니다. CharacterStat 입력 → DT_CharacterStat.xlsx 생성");
+            Note("위쪽 테마 버튼에서 기본·초원·바다 테마를 고를 수 있습니다. 다크 모드는 선택한 테마에 맞춰 적용됩니다.");
         }
 
         private void RenderFiles()

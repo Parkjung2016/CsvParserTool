@@ -185,7 +185,7 @@ namespace CSVParserTool
             table.Controls.Add(line, 0, row);
         }
 
-        private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled;
+        private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled && UiTheme.CurrentTheme == AppTheme.Default;
 
         private void StartEntranceAnimation()
         {
