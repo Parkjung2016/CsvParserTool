@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
+using System.Threading;
 using CSVParserTool;
 
 public static class CsvClassGenerator
@@ -70,8 +72,105 @@ public static class CsvClassGenerator
         return GenerateTableContainerFile(ParseTableFromXlsx(xlsxPath, stem));
     }
 
-    /// <summary>UI 미리보기 전용: XLSX 앞부분만 읽어 빠르게 코드 스케치를 생성합니다.</summary>
+    /// <summary>UI 미리보기 전용: 선택 테이블만 빠르게 읽어 코드를 생성합니다.</summary>
     public static string GeneratePreviewFromXlsxFast(string xlsxPath, int maxRows = 64, string exportVersion = null)
+    {
+        var options = CreatePreviewParseOptions(exportVersion);
+        return GenerateTableContainerFile(ParsePreviewTableFromXlsx(xlsxPath, maxRows, options));
+    }
+
+    /// <summary>선택 테이블과 참조되는 모든 XLSX를 읽고 Export와 동일한 참조 검사를 수행합니다.</summary>
+    public static string GenerateValidatedPreviewFromXlsx(
+        string xlsxPath,
+        string xlsxFolder,
+        string exportVersion,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(xlsxPath) || !File.Exists(xlsxPath))
+            throw new FileNotFoundException("XLSX not found.", xlsxPath);
+
+        string folder = !string.IsNullOrWhiteSpace(xlsxFolder) && Directory.Exists(xlsxFolder)
+            ? xlsxFolder
+            : Path.GetDirectoryName(xlsxPath);
+        var options = CreatePreviewParseOptions(exportVersion);
+        var workbookByClass = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
+        {
+            foreach (string path in Directory.GetFiles(folder, "*.xlsx"))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (Path.GetFileName(path).StartsWith("~$", StringComparison.Ordinal)
+                    || EnumCatalogService.IsCatalogPath(path))
+                    continue;
+
+                string className = DataRecordClassNameFromFileBaseName(Path.GetFileNameWithoutExtension(path));
+                if (workbookByClass.TryGetValue(className, out string existing)
+                    && !string.Equals(existing, path, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        $"같은 클래스 이름으로 생성되는 XLSX가 중복됩니다: {Path.GetFileName(existing)}, {Path.GetFileName(path)} ({className})");
+                }
+
+                workbookByClass[className] = path;
+            }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        CsvTableParseResult selected = ParsePreviewTableFromXlsx(xlsxPath, 64, options);
+        if (!selected.ColumnReferences.Any(reference => reference != null))
+            return GenerateTableContainerFile(selected);
+
+        cancellationToken.ThrowIfCancellationRequested();
+        selected = ParsePreviewTableFromXlsx(xlsxPath, int.MaxValue, options);
+        var tablesByClass = new Dictionary<string, CsvTableParseResult>(StringComparer.OrdinalIgnoreCase)
+        {
+            [selected.ClassName] = selected
+        };
+        var pending = new Queue<CsvTableParseResult>();
+        pending.Enqueue(selected);
+
+        while (pending.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CsvTableParseResult table = pending.Dequeue();
+            foreach (CsvColumnReference reference in table.ColumnReferences ?? Array.Empty<CsvColumnReference>())
+            {
+                if (reference == null)
+                    continue;
+
+                string targetClass = DataRecordClassNameFromFileBaseName(reference.TableName);
+                if (tablesByClass.ContainsKey(targetClass)
+                    || !workbookByClass.TryGetValue(targetClass, out string targetPath))
+                    continue;
+
+                CsvTableParseResult target = ParsePreviewTableFromXlsx(targetPath, int.MaxValue, options);
+                tablesByClass.Add(target.ClassName, target);
+                pending.Enqueue(target);
+            }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        List<CsvTableParseResult> tables = tablesByClass.Values.ToList();
+        CrossTableReferenceResolver.Resolve(tables);
+
+        string enumWorkbook = EnumCatalogService.FindWorkbook(folder);
+        if (!string.IsNullOrEmpty(enumWorkbook))
+            EnumCatalogService.ApplyToTables(EnumCatalogService.ParseXlsx(enumWorkbook), tables);
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return GenerateTableContainerFile(selected);
+    }
+
+    private static CsvParseOptions CreatePreviewParseOptions(string exportVersion) =>
+        string.IsNullOrWhiteSpace(exportVersion)
+            ? null
+            : new CsvParseOptions { ExportVersion = exportVersion.Trim() };
+
+    private static CsvTableParseResult ParsePreviewTableFromXlsx(
+        string xlsxPath,
+        int maxRows,
+        CsvParseOptions options)
     {
         string csv = XlsxPreviewReader.ReadFirstWorksheetAsCsv(xlsxPath, maxRows);
         string[] lines = csv
@@ -83,11 +182,9 @@ public static class CsvClassGenerator
             throw new InvalidOperationException("Preview requires at least a header row.");
 
         string sheetName = Path.GetFileNameWithoutExtension(xlsxPath);
-        string className = DataRecordClassNameFromFileBaseName(string.IsNullOrWhiteSpace(sheetName) ? "Sheet" : sheetName);
-        var options = string.IsNullOrWhiteSpace(exportVersion)
-            ? null
-            : new CsvParseOptions { ExportVersion = exportVersion.Trim() };
-        return GenerateTableContainerFile(CsvTableParser.ParseLines(lines, className, options));
+        string className = DataRecordClassNameFromFileBaseName(
+            string.IsNullOrWhiteSpace(sheetName) ? "Sheet" : sheetName);
+        return CsvTableParser.ParseLines(lines, className, options);
     }
 
     public static string GenerateTableContainerFile(string csvPath, string classNameOverride = null, CsvParseOptions options = null) =>
@@ -155,7 +252,13 @@ public static class CsvClassGenerator
 
             CsvColumnReference reference = table.ColumnReferences[i];
             if (reference != null)
-                sb.AppendLine($"        /// <summary>{reference.TableName}.{reference.ColumnName} {(reference.IsArray ? "여러 값 참조" : "참조")}</summary>");
+            {
+                string referenceSummary = reference.IsValidationOnly
+                    ? reference.IsArray ? "여러 값 존재 검증" : "값 존재 검증"
+                    : reference.IsArray ? "여러 값 참조" : "참조";
+                string referenceClassName = DataRecordClassNameFromFileBaseName(reference.TableName);
+                sb.AppendLine($"        /// <summary>{referenceClassName}.{reference.ColumnName} {referenceSummary}</summary>");
+            }
 
             sb.AppendLine($"        [Key({i})]");
             if (CsvColumnTypes.TryGetArrayElementType(type, out string elementType))

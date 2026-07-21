@@ -9,7 +9,7 @@ namespace CSVParserTool
     {
         /// <summary>동시 처리 개수. 코어 수 기준, 최대 8로 제한 (XLSX/대용량 CSV 메모리 부담 완화).</summary>
         public static int DefaultBatchSize =>
-            Math.Max(1, Math.Min(Environment.ProcessorCount, 8));
+            Math.Max(1, Math.Min(Math.Max(1, Environment.ProcessorCount - 1), 8));
 
         public static void ForEach<T>(
             IReadOnlyList<T> items,

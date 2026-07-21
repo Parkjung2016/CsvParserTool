@@ -11,12 +11,14 @@ namespace CSVParserTool
         public string TableName { get; }
         public string ColumnName { get; }
         public bool IsArray { get; }
+        public bool IsValidationOnly { get; }
 
-        public CsvColumnReference(string tableName, string columnName, bool isArray = false)
+        public CsvColumnReference(string tableName, string columnName, bool isArray = false, bool isValidationOnly = false)
         {
             TableName = tableName;
             ColumnName = columnName;
             IsArray = isArray;
+            IsValidationOnly = isValidationOnly;
         }
     }
 
@@ -176,6 +178,8 @@ namespace CSVParserTool
             string[] rawHeader = SplitCsvLine(lines[tableLineIndexes[0]]);
             bool[] noteKeepMask = BuildExportColumnKeepMask(rawHeader);
             string[] headers = FilterExportColumns(rawHeader, noteKeepMask);
+            for (int i = 0; i < headers.Length; i++)
+                headers[i] = headers[i]?.Trim() ?? string.Empty;
 
             if (tableLineIndexes.Count < 2)
             {
@@ -208,7 +212,7 @@ namespace CSVParserTool
             if (!CsvColumnTypes.LooksLikeTypeRow(typeProbe, headers))
             {
                 throw new InvalidOperationException(
-                    "3행이 타입 행이 아닙니다. 각 열에 int, string, enum:타입명, int[], ref 테이블.컬럼 등을 지정하세요.");
+                    "3행이 타입 행이 아닙니다. 각 열에 int, string, enum:타입명, int[], ref 테이블.컬럼, keyref 테이블.컬럼 등을 지정하세요.");
             }
 
             const int typeLineTableIndex = 2;
@@ -253,6 +257,8 @@ namespace CSVParserTool
                 dataRows.Add(FilterColumnsByMask(row, versionKeepMask));
             }
 
+            ValidateUniqueIds(className, headers, columnTypes, dataRows);
+
             return new CsvTableParseResult(
                 className,
                 headers,
@@ -283,6 +289,66 @@ namespace CSVParserTool
             File.WriteAllText(csvPath, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         }
 
+        private static void ValidateUniqueIds(
+            string className,
+            string[] headers,
+            string[] columnTypes,
+            IReadOnlyList<string[]> dataRows)
+        {
+            int idColumn = FindIdColumnIndex(headers);
+            if (idColumn < 0 || dataRows == null)
+                return;
+
+            string idType = idColumn < columnTypes.Length ? columnTypes[idColumn] : "string";
+            var firstRowById = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int row = 0; row < dataRows.Count; row++)
+            {
+                string[] cells = dataRows[row];
+                string rawId = cells != null && idColumn < cells.Length
+                    ? cells[idColumn]
+                    : string.Empty;
+                string normalizedId = NormalizeIdForUniqueness(rawId, idType);
+                if (firstRowById.TryGetValue(normalizedId, out int firstRow))
+                {
+                    string displayId = string.IsNullOrWhiteSpace(rawId) ? "(빈 값)" : rawId.Trim();
+                    throw new InvalidOperationException(
+                        $"{className}: Id '{displayId}'가 중복되었습니다. " +
+                        $"데이터 {firstRow + 1}번째 행과 {row + 1}번째 행의 Id는 서로 달라야 합니다.");
+                }
+
+                firstRowById.Add(normalizedId, row);
+            }
+        }
+
+        private static string NormalizeIdForUniqueness(string value, string columnType)
+        {
+            value = value?.Trim() ?? string.Empty;
+            switch (columnType?.Trim().ToLowerInvariant())
+            {
+                case "int":
+                    return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int intValue)
+                        ? "int:" + intValue.ToString(CultureInfo.InvariantCulture)
+                        : "int-raw:" + value;
+                case "uint":
+                    return uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out uint uintValue)
+                        ? "uint:" + uintValue.ToString(CultureInfo.InvariantCulture)
+                        : "uint-raw:" + value;
+                case "float":
+                    return float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float floatValue)
+                        ? "float:" + floatValue.ToString("R", CultureInfo.InvariantCulture)
+                        : "float-raw:" + value;
+                case "double":
+                    return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double doubleValue)
+                        ? "double:" + doubleValue.ToString("R", CultureInfo.InvariantCulture)
+                        : "double-raw:" + value;
+                case "bool":
+                    return bool.TryParse(value, out bool boolValue)
+                        ? "bool:" + boolValue.ToString()
+                        : "bool-raw:" + value;
+                default:
+                    return "value:" + value;
+            }
+        }
         private static void AppendCsvRow(StringBuilder sb, string[] cells)
         {
             for (int i = 0; i < cells.Length; i++)
@@ -414,7 +480,7 @@ namespace CSVParserTool
             {
                 throw new InvalidOperationException(
                     $"열 '{header}': 인식할 수 없는 타입 '{explicitTypeCell.Trim()}'. " +
-                    "int, string, enum:타입명, int[], enum:타입명[], ref 테이블.컬럼을 사용할 수 있습니다.");
+                    "int, string, enum:타입명, int[], enum:타입명[], ref 테이블.컬럼, keyref 테이블.컬럼을 사용할 수 있습니다.");
             }
 
             return explicitType;
@@ -434,28 +500,32 @@ namespace CSVParserTool
             if (!CsvColumnTypes.IsReferenceTypeToken(raw))
                 return false;
 
-            string target = raw.Substring(3).Trim();
+            bool isValidationOnly = CsvColumnTypes.IsValidationReferenceTypeToken(raw);
+            int prefixLength = isValidationOnly ? "keyref".Length : "ref".Length;
+            string target = raw.Substring(prefixLength).Trim();
             int dot = target.LastIndexOf('.');
             if (dot <= 0 || dot >= target.Length - 1)
             {
+                string example = isValidationOnly ? "keyref Stat.Id" : "ref CharacterStat.Speed";
                 throw new InvalidOperationException(
-                    $"참조 타입 '{raw}' 형식이 올바르지 않습니다. (예: ref CharacterStat.Speed)");
+                    $"참조 타입 '{raw}' 형식이 올바르지 않습니다. (예: {example})");
             }
 
             string tableName = target.Substring(0, dot).Trim();
             string columnName = target.Substring(dot + 1).Trim();
             if (string.IsNullOrWhiteSpace(tableName) || string.IsNullOrWhiteSpace(columnName))
             {
+                string example = isValidationOnly ? "keyref Stat.Id" : "ref CharacterStat.Speed";
                 throw new InvalidOperationException(
-                    $"참조 타입 '{raw}' 형식이 올바르지 않습니다. (예: ref CharacterStat.Speed)");
+                    $"참조 타입 '{raw}' 형식이 올바르지 않습니다. (예: {example})");
             }
 
-            reference = new CsvColumnReference(tableName, columnName, isArray);
+            reference = new CsvColumnReference(tableName, columnName, isArray, isValidationOnly);
             return true;
         }
-
         public static string SanitizeIdentifier(string s)
         {
+            s = s?.Trim();
             if (string.IsNullOrEmpty(s))
                 return "_";
 

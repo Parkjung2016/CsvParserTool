@@ -188,8 +188,15 @@ namespace CSVParserTool
         }
 
         public static bool IsReferenceTypeToken(string raw) =>
+            IsValueReferenceTypeToken(raw) || IsValidationReferenceTypeToken(raw);
+
+        public static bool IsValueReferenceTypeToken(string raw) =>
             !string.IsNullOrWhiteSpace(raw)
             && raw.TrimStart().StartsWith("ref ", StringComparison.OrdinalIgnoreCase);
+
+        public static bool IsValidationReferenceTypeToken(string raw) =>
+            !string.IsNullOrWhiteSpace(raw)
+            && raw.TrimStart().StartsWith("keyref ", StringComparison.OrdinalIgnoreCase);
 
         public static bool IsPrimitiveType(string columnType) =>
             !string.IsNullOrWhiteSpace(columnType) && PrimitiveNames.Contains(columnType.Trim());

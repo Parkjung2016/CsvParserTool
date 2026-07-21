@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -44,6 +45,9 @@ namespace CSVParserTool
         private NotifyIcon exportNotifyIcon;
         private System.Windows.Forms.Timer exportNotificationHideTimer;
         private System.Windows.Forms.Timer exportCompletionAnimationTimer;
+        private readonly System.Windows.Forms.Timer exportLogFlushTimer = new System.Windows.Forms.Timer { Interval = 80 };
+        private readonly ConcurrentQueue<string> pendingExportLogs = new ConcurrentQueue<string>();
+        private int exportLogFlushScheduled;
         private int exportCompletionAnimationFrame;
         private Color exportCompletionAnimationStartColor;
         private string projectRootPath = "";
@@ -95,6 +99,7 @@ namespace CSVParserTool
             InitializeComponent();
             InitializeExportLogSplitter();
             InitializeInfoButton();
+            exportLogFlushTimer.Tick += (_, __) => FlushPendingExportLogs();
 
             bool darkMode = ToolSettingsStore.DarkMode;
             UiTheme.SetTheme(UiTheme.ParseTheme(ToolSettingsStore.ThemeName), darkMode);
@@ -789,6 +794,7 @@ namespace CSVParserTool
             exportNotificationHideTimer = null;
             exportCompletionAnimationTimer?.Dispose();
             exportCompletionAnimationTimer = null;
+            exportLogFlushTimer.Dispose();
             exportNotifyIcon?.Dispose();
             exportNotifyIcon = null;
             exportMiniGameForm?.Dispose();
@@ -1052,18 +1058,28 @@ namespace CSVParserTool
                 string targetText = selectedOnly ? $"선택 {selectedTableStems.Count}개" : "전체";
                 AddLog($"데이터 Export 시작… ({targetText}, 버전 {exportVersion}, 원본 없는 이전 파일 삭제 {(Chk_RemoveOrphanArtifacts.Checked ? "ON" : "OFF")})", LogLevel.Info);
 
-                Task<DataExportResult> exportTask = Task.Run(() => DataExportService.RunExport(
-                    projectRootPath,
-                    excelSourceFolderPath,
-                    refresh,
-                    ExportLog,
-                    ReportExportProgress,
-                    exportVersion: exportVersion,
-                    removeOrphanArtifacts: Chk_RemoveOrphanArtifacts.Checked,
-                    selectedTableStems: selectedTableStems));
+                // UI values must be captured before the worker starts. Reading WinForms
+                // controls from the export thread is unsafe and can also stall rendering.
+                string projectRoot = projectRootPath;
+                string excelSourceFolder = excelSourceFolderPath;
+                string version = exportVersion;
+                bool removeOrphanArtifacts = Chk_RemoveOrphanArtifacts.Checked;
+                string[] selectedStems = selectedTableStems?.ToArray();
 
+                // Open and paint the game before the CPU-heavy export begins. Show() only
+                // creates the window; painting happens after control returns to the message loop.
                 ShowExportMiniGame();
+                await PrepareExportMiniGameAsync();
+
+                Task<DataExportResult> exportTask = StartExportWorker(
+                    projectRoot,
+                    excelSourceFolder,
+                    refresh,
+                    version,
+                    removeOrphanArtifacts,
+                    selectedStems);
                 DataExportResult result = await exportTask;
+                FlushPendingExportLogs();
 
                 FinishExportProgressUi(result);
 
@@ -1080,6 +1096,7 @@ namespace CSVParserTool
             }
             catch (Exception ex)
             {
+                FlushPendingExportLogs();
                 FinishExportProgressUi(null);
                 AddLog(ex.Message, LogLevel.Error);
             }
@@ -1088,6 +1105,52 @@ namespace CSVParserTool
                 Btn_DataSetting.Enabled = true;
                 Btn_ExportSelected.Enabled = true;
             }
+        }
+
+        private async Task PrepareExportMiniGameAsync()
+        {
+            if (exportMiniGameForm == null || exportMiniGameForm.IsDisposed || !exportMiniGameForm.Visible)
+                return;
+
+            exportMiniGameForm.RenderFirstFrame();
+            await Task.Delay(32);
+        }
+
+        private Task<DataExportResult> StartExportWorker(
+            string projectRoot,
+            string excelSourceFolder,
+            bool refresh,
+            string version,
+            bool removeOrphanArtifacts,
+            IReadOnlyCollection<string> selectedTableStems)
+        {
+            return Task.Factory.StartNew(
+                () =>
+                {
+                    // A dedicated, lower-priority worker leaves UI input and animation responsive
+                    // when parallel table conversion is using every available CPU core.
+                    try
+                    {
+                        Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
+                    }
+                    catch (Exception)
+                    {
+                        // Some hosts do not allow changing thread priority. Export remains valid.
+                    }
+
+                    return DataExportService.RunExport(
+                        projectRoot,
+                        excelSourceFolder,
+                        refresh,
+                        ExportLog,
+                        ReportExportProgress,
+                        exportVersion: version,
+                        removeOrphanArtifacts: removeOrphanArtifacts,
+                        selectedTableStems: selectedTableStems);
+                },
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
         }
 
         private void ShowExportMiniGame()
@@ -1432,16 +1495,47 @@ namespace CSVParserTool
 
         private void ExportLog(string message)
         {
-            if (IsDisposed)
+            if (IsDisposed || string.IsNullOrEmpty(message))
                 return;
 
+            pendingExportLogs.Enqueue(message);
+            if (Interlocked.Exchange(ref exportLogFlushScheduled, 1) != 0)
+                return;
+
+            try
+            {
+                BeginInvoke(new Action(() => exportLogFlushTimer.Start()));
+            }
+            catch (Exception ex) when (ex is InvalidOperationException || ex is ObjectDisposedException)
+            {
+                Interlocked.Exchange(ref exportLogFlushScheduled, 0);
+            }
+        }
+
+        private void FlushPendingExportLogs()
+        {
             if (InvokeRequired)
             {
-                BeginInvoke(new Action(() => ExportLog(message)));
+                BeginInvoke(new Action(FlushPendingExportLogs));
                 return;
             }
 
-            AddLog(message, LogLevel.Info);
+            exportLogFlushTimer.Stop();
+            int added = 0;
+            while (pendingExportLogs.TryDequeue(out string message))
+            {
+                allLogs.Add(new LogEntry(LogLevel.Info, message));
+                added++;
+            }
+
+            if (allLogs.Count > maxLogLines)
+                allLogs.RemoveRange(0, allLogs.Count - maxLogLines);
+            if (added > 0)
+                RefreshLogDisplay();
+
+            Interlocked.Exchange(ref exportLogFlushScheduled, 0);
+            if (!pendingExportLogs.IsEmpty && Interlocked.Exchange(ref exportLogFlushScheduled, 1) == 0)
+                exportLogFlushTimer.Start();
         }
 
         /// <summary>입력은 테이블 이름(확장자 없음). 파일명으로 쓸 수 있게 정리하고, 없으면 앞에 DT_.</summary>
@@ -1910,6 +2004,44 @@ namespace CSVParserTool
             ReloadDataFileList(quietLog: true);
         }
 
+        private static string BuildPreviewCacheKey(string xlsxPath, string xlsxFolder, string previewExportVersion)
+        {
+            var key = new StringBuilder();
+            key.Append(xlsxPath).Append('|').Append(previewExportVersion);
+            string folder = !string.IsNullOrWhiteSpace(xlsxFolder) && Directory.Exists(xlsxFolder)
+                ? xlsxFolder
+                : Path.GetDirectoryName(xlsxPath);
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
+                {
+                    foreach (string path in Directory.GetFiles(folder, "*.xlsx")
+                        .Where(path => !Path.GetFileName(path).StartsWith("~$", StringComparison.Ordinal))
+                        .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+                    {
+                        var info = new FileInfo(path);
+                        key.Append('|')
+                            .Append(info.Name)
+                            .Append(':')
+                            .Append(info.LastWriteTimeUtc.Ticks)
+                            .Append(':')
+                            .Append(info.Length);
+                    }
+                }
+            }
+            catch (IOException)
+            {
+                key.Append('|').Append(File.GetLastWriteTimeUtc(xlsxPath).Ticks);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                key.Append('|').Append(File.GetLastWriteTimeUtc(xlsxPath).Ticks);
+            }
+
+            return key.ToString();
+        }
+
         private async void RefreshPreviewFromXlsx(string xlsxPath)
         {
             int version = ++previewRequestVersion;
@@ -1921,7 +2053,9 @@ namespace CSVParserTool
                 return;
             }
 
-            string cacheKey = xlsxPath + "|" + exportVersion + "|" + File.GetLastWriteTimeUtc(xlsxPath).Ticks.ToString();
+            string previewFolder = excelSourceFolderPath;
+            string previewExportVersion = exportVersion;
+            string cacheKey = BuildPreviewCacheKey(xlsxPath, previewFolder, previewExportVersion);
             if (previewCacheByPath.TryGetValue(cacheKey, out string cached))
             {
                 SetPreviewCode(cached);
@@ -1947,10 +2081,11 @@ namespace CSVParserTool
                 string preview = await Task.Run(() =>
                     EnumCatalogService.IsCatalogPath(xlsxPath)
                         ? EnumCatalogService.GenerateSource(EnumCatalogService.ParseXlsx(xlsxPath))
-                        : CsvClassGenerator.GeneratePreviewFromXlsxFast(
+                        : CsvClassGenerator.GenerateValidatedPreviewFromXlsx(
                             xlsxPath,
-                            maxRows: 64,
-                            exportVersion: exportVersion), token);
+                            previewFolder,
+                            previewExportVersion,
+                            token), token);
 
                 token.ThrowIfCancellationRequested();
                 if (version != previewRequestVersion)
@@ -1969,7 +2104,9 @@ namespace CSVParserTool
             {
                 if (version != previewRequestVersion)
                     return;
-                SetPreviewCode(string.Empty);
+                string previewError = "// Preview 검사 실패\n// " +
+                    (ex.GetBaseException().Message ?? ex.Message).Replace("\r\n", "\n").Replace("\n", "\n// ");
+                SetPreviewCode(previewError);
                 AddLog($"미리보기 생성 실패: {ex.Message}", LogLevel.Warning);
             }
             finally

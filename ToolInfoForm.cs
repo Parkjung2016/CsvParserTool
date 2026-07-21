@@ -192,7 +192,6 @@ namespace CSVParserTool
             sections.Add(new GuideSection("Enum 관리", RenderEnumCatalog));
             sections.Add(new GuideSection("테이블 참조", RenderReferences));
             sections.Add(new GuideSection("버전 · Export", RenderExport));
-            sections.Add(new GuideSection("Export 미니게임", RenderMiniGames));
             sections.Add(new GuideSection("오류 · 검증", RenderValidation));
         }
 
@@ -428,7 +427,7 @@ namespace CSVParserTool
             Heading("지원 타입");
             Body("타입 행에는 아래 타입 중 하나를 입력합니다. 대소문자는 구분하지 않습니다.");
             Bullet("타입에 str이라고 써도 string으로 처리합니다.");
-            Code("bool   uint   int   float   double   string\nenum:CharacterState   enum:ItemTag[]\nint[]   string[]\nref CharacterStat.Speed   ref CharacterStat.Speed[]");
+            Code("bool   uint   int   float   double   string\nenum:CharacterState   enum:ItemTag[]\nint[]   string[]\nref CharacterStat.Speed   ref CharacterStat.Speed[]\nkeyref Stat.Id   keyref Stat.Id[]");
             Subheading("Enum");
             Bullet("모든 enum은 Enum XLSX 버튼으로 만든 DT_Enums.xlsx 한 곳에서 관리합니다.");
             Bullet("테이블의 타입 행에는 반드시 enum:CharacterType처럼 DT_Enums.xlsx에 등록한 EnumName을 입력합니다.");
@@ -478,22 +477,36 @@ namespace CSVParserTool
 
         private void RenderReferences()
         {
-            Heading("다른 테이블 값 참조하기");
-            Body("헤더에는 생성할 변수명을, 타입 행에는 참조 대상을, 데이터 행에는 대상 테이블의 Id를 입력합니다.");
+            Heading("다른 테이블 참조하기");
+            Body("참조는 타입 행에 직접 적습니다. 컬럼 이름만으로 참조를 추측하지 않으므로 규칙이 명확하고 안전합니다.");
+
+            Subheading("실제 값 가져오기 — ref");
+            Body("데이터 행에는 대상 테이블의 Id를 입력합니다. Export하면 해당 행의 지정 컬럼 값으로 바뀝니다.");
             Table(
                 "#설명\tId\tMoveSpeed",
                 "버전\t1.0.0\t1.0.0",
                 "타입\tint\tref CharacterStat.Speed",
                 "\t0\t1");
-            Subheading("위 예제의 의미");
-            Bullet("MoveSpeed는 DT_CharacterStat에서 Id가 1인 행을 찾습니다.");
-            Bullet("해당 행의 Speed 값을 가져와 실제 Export 값으로 사용합니다.");
-            Bullet("MoveSpeed의 C# 타입도 CharacterStat.Speed 타입을 따라갑니다.");
+            Bullet("MoveSpeed의 1은 DT_CharacterStat에서 Id가 1인 행의 Speed 실제 값으로 바뀝니다.");
+            Bullet("생성되는 C# 타입도 CharacterStat.Speed 타입을 자동으로 따라갑니다.");
             Code("/// <summary>CharacterStat.Speed 참조</summary>\npublic float MoveSpeed { get; set; }");
-            Subheading("테이블 이름");
-            Body("CharacterStat, DT_CharacterStat, CharacterStatData는 같은 테이블 이름으로 인식합니다.");
-        }
 
+            Subheading("값은 유지하고 존재만 확인 — keyref");
+            Body("외래 키처럼 원래 값을 그대로 저장하면서, 대상 테이블에 실제로 등록되어 있는지만 검사할 때 사용합니다.");
+            Table(
+                "#설명\tId\tCharacterId\tStatId\tBaseValue",
+                "버전\t1.0.0\t1.0.0\t1.0.0\t1.0.0",
+                "타입\tint\tint\tkeyref Stat.Id\tfloat",
+                "\t10000\t1000\tHealth\t100");
+            Bullet("Health는 그대로 Export되며 DT_Stat.Id에 Health가 있는지만 확인합니다.");
+            Bullet("DT_Stat.Id에 Health가 없으면 잘못된 데이터 파일을 만들지 않고 Export 전체가 실패합니다.");
+            Bullet("여러 값을 검사하려면 keyref Stat.Id[]로 쓰고 Health|Attack처럼 입력합니다.");
+            Code("/// <summary>Stat.Id 값 존재 검증</summary>\npublic string StatId { get; set; }");
+
+            Subheading("테이블 이름");
+            Body("Stat, DT_Stat, StatData처럼 입력해도 같은 테이블 이름으로 인식합니다.");
+            Note("ref는 값을 가져오고, keyref는 입력값을 유지한 채 존재 여부만 확인합니다.");
+        }
         private void RenderExport()
         {
             Heading("버전과 Export");
@@ -513,34 +526,20 @@ namespace CSVParserTool
             Note("참조 대상 컬럼이 현재 Export 버전에서 제외되면 참조 오류로 처리됩니다.");
         }
 
-        private void RenderMiniGames()
-        {
-            Heading("Export 미니게임");
-            Body("Export가 시작되면 별도 게임 창이 열립니다. 게임을 닫아도 Export는 그대로 계속 진행됩니다.");
-            Bullet("Export마다 등록된 미니게임 중 하나가 랜덤으로 선택됩니다.");
-            Bullet("배구는 AI와 7점 승부를 하며 기본 난이도는 어려움입니다.");
-            Bullet("상단 목록에서 게임을 바꾸거나 ‘다시 시작’으로 현재 게임을 초기화할 수 있습니다.");
-            Bullet("Export가 끝난 뒤에도 결과를 확인하면서 게임을 계속 플레이할 수 있습니다.");
-            Subheading("게임 추가");
-            Bullet("내장 게임은 ExportMiniGame 클래스를 상속하면 자동으로 등록됩니다.");
-            Bullet("게임 C# 소스를 추가하고 툴을 다시 빌드하면 DataToolGUI.exe 안에 함께 포함됩니다.");
-            Bullet("실행 폴더에 미니게임용 DLL이나 별도 리소스 폴더를 만들지 않습니다.");
-            Note("게임 추가 후 Release 빌드하면 기존 단일 EXE 배포 방식을 그대로 유지합니다.");
-        }
         private void RenderValidation()
         {
             Heading("Export 실패 조건");
-            Body("모든 테이블과 참조를 먼저 확인합니다. 하나라도 잘못되면 잘못된 데이터 파일을 만들지 않고 Export를 중단합니다.");
-            Bullet("참조 테이블 또는 참조 컬럼이 없음");
-            Bullet("입력한 참조 Id가 대상 테이블에 없음");
+            Body("모든 테이블과 참조를 먼저 확인합니다. 하나라도 잘못되면 잘못된 파일을 만들지 않고 Export를 중단합니다.");
+            Bullet("ref 또는 keyref 대상 테이블이나 컬럼이 없음");
+            Bullet("ref에 입력한 대상 Id가 없음");
+            Bullet("keyref에 입력한 값이 대상 컬럼에 없음");
             Bullet("대상 테이블에 같은 Id가 두 개 이상 있음");
-            Bullet("참조가 서로 순환함");
+            Bullet("ref 참조가 서로 순환함");
             Bullet("필수 Id, 버전 또는 타입이 잘못됨");
             Subheading("오류 메시지 예시");
-            Code("DT_Stage[Id=0].MoveSpeed:\nDT_CharacterStat에서 Id '999'을 찾을 수 없습니다.\n(Speed 참조)");
-            Note("오류에는 테이블, 행 Id, 컬럼명이 함께 표시되므로 해당 셀을 바로 수정할 수 있습니다.");
+            Code("DT_CharacterStat[Id=10000].StatId:\nDT_Stat.Id에서 값 'Health'을(를) 찾을 수 없습니다.\n(keyref 존재 검증)");
+            Note("오류에는 테이블, 행 Id, 컬럼명이 함께 표시되므로 잘못된 값을 바로 찾을 수 있습니다.");
         }
-
         private void Heading(string text)
         {
             AddText(text, headingFont, UiTheme.TextPrimary, new Padding(0, 0, 0, 14));

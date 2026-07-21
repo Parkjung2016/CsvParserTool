@@ -116,15 +116,13 @@ namespace CSVParserTool
 
                 try
                 {
-                    Report(DataExportProgressKind.PhaseChanged, phaseLabel: "Excel → CSV 변환", phaseIndex: 0);
+                    Report(DataExportProgressKind.PhaseChanged, phaseLabel: "XLSX 원본 검사", phaseIndex: 0);
                     string csvDir = DataProjectPaths.DataCsvDir(projectRoot);
                     Directory.CreateDirectory(csvDir);
-                    int n = XlsxToCsvConverter.ConvertAllXlsxInFolder(
-                        excelSourceFolder,
-                        csvDir,
-                        log,
-                        selectedOnly ? selectedStems : null);
-                    log?.Invoke($"Excel → CSV refresh ({n} file(s)).");
+                    int sourceCount = selectedOnly
+                        ? xlsxDtStems.Count(stem => selectedStems.Contains(stem))
+                        : xlsxDtStems.Count;
+                    log?.Invoke($"XLSX 원본 {sourceCount}개 검사 준비. 검증 완료 후 런타임 CSV를 생성합니다.");
 
                     if (removeOrphanArtifacts && xlsxDtStems != null && xlsxDtStems.Count > 0)
                     {
@@ -163,29 +161,27 @@ namespace CSVParserTool
                 Directory.CreateDirectory(dataCsv);
                 Directory.CreateDirectory(bytesDir);
 
-                // Export 대상: XLSX 원본 폴더가 있으면 그 목록과 일치하는 DT_*.csv만.
-                string[] allCsvFiles = Directory.GetFiles(dataCsv, "*.csv")
+                // XLSX가 있으면 런타임 폴더에 중간 CSV를 만들지 않고 원본을 직접 검증한다.
+                // 모든 검사가 끝난 뒤 ExportSingleTable이 최종 헤더·데이터 행만 CSV로 기록한다.
+                string[] existingCsvFiles = Directory.GetFiles(dataCsv, "*.csv")
                     .Where(p => Path.GetFileName(p).StartsWith("DT_", StringComparison.OrdinalIgnoreCase))
                     .ToArray();
-
                 string[] csvFiles;
                 if (hasXlsxSource)
                 {
-                    csvFiles = DataExportSourceFilter.FilterCsvPathsByXlsxStems(allCsvFiles, xlsxDtStems);
-                    if (csvFiles.Length == 0 && xlsxDtStems.Count > 0)
-                    {
-                        return Fail("XLSX 원본 폴더에 테이블은 있지만 CSV가 없습니다. Export 전 Excel→CSV 변환을 실행하세요.");
-                    }
+                    csvFiles = xlsxDtStems
+                        .Select(stem => Path.Combine(dataCsv, stem + ".csv"))
+                        .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
 
-                    if (csvFiles.Length < allCsvFiles.Length)
-                    {
-                        int skipped = allCsvFiles.Length - csvFiles.Length;
+                    int skipped = existingCsvFiles.Count(path =>
+                        !xlsxDtStems.Contains(Path.GetFileNameWithoutExtension(path)));
+                    if (skipped > 0)
                         log?.Invoke($"XLSX에 없는 CSV {skipped}개는 Export에서 제외합니다.");
-                    }
                 }
                 else
                 {
-                    csvFiles = allCsvFiles
+                    csvFiles = existingCsvFiles
                         .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
                         .ToArray();
                 }

@@ -11,6 +11,7 @@ namespace CSVParserTool
             public readonly IReadOnlyList<CsvTableParseResult> Tables;
             public readonly Dictionary<string, CsvTableParseResult> TablesByClass;
             public readonly Dictionary<CsvTableParseResult, Dictionary<string, int>> IdIndexes = new();
+            public readonly Dictionary<string, HashSet<string>> ColumnValueIndexes = new(StringComparer.OrdinalIgnoreCase);
 
             public Context(IReadOnlyList<CsvTableParseResult> tables)
             {
@@ -91,6 +92,12 @@ namespace CSVParserTool
 
             CsvTableParseResult targetTable = FindTable(context, table, column, reference);
             int targetColumn = FindTargetColumn(targetTable, reference.ColumnName, table, column);
+            reference = new CsvColumnReference(
+                targetTable.ClassName,
+                targetTable.Headers[targetColumn],
+                reference.IsArray,
+                reference.IsValidationOnly);
+            table.ColumnReferences[column] = reference;
             string targetType = ResolveColumnType(context, targetTable, targetColumn, resolving, resolved);
             if (reference.IsArray)
             {
@@ -125,6 +132,21 @@ namespace CSVParserTool
             CsvTableParseResult targetTable = FindTable(context, sourceTable, sourceColumn, reference);
             int targetColumn = FindTargetColumn(targetTable, reference.ColumnName, sourceTable, sourceColumn);
             string sourceValue = Cell(sourceTable, sourceRow, sourceColumn);
+            if (reference.IsValidationOnly)
+            {
+                ValidateReferenceValues(
+                    context,
+                    sourceTable,
+                    sourceRow,
+                    sourceColumn,
+                    targetTable,
+                    targetColumn,
+                    reference,
+                    sourceValue);
+                resolving.Remove(cellKey);
+                return sourceValue;
+            }
+
             if (reference.IsArray)
             {
                 string[] referenceIds = CsvColumnTypes.SplitArrayCell(sourceValue);
@@ -183,6 +205,71 @@ namespace CSVParserTool
             }
 
             return ResolveCellValue(context, targetTable, targetRow, targetColumn, resolving);
+        }
+
+        private static void ValidateReferenceValues(
+            Context context,
+            CsvTableParseResult sourceTable,
+            int sourceRow,
+            int sourceColumn,
+            CsvTableParseResult targetTable,
+            int targetColumn,
+            CsvColumnReference reference,
+            string sourceValue)
+        {
+            string[] values = reference.IsArray
+                ? CsvColumnTypes.SplitArrayCell(sourceValue)
+                : new[] { NormalizeKey(sourceValue) };
+
+            foreach (string rawValue in values)
+            {
+                string value = NormalizeKey(rawValue);
+                if (string.IsNullOrEmpty(value))
+                {
+                    throw new InvalidOperationException(
+                        $"{SourceLocation(sourceTable, sourceRow, sourceColumn)}: 검증할 참조 값이 비어 있습니다. " +
+                        $"({DisplayTable(targetTable)}.{targetTable.Headers[targetColumn]} 존재 검증)");
+                }
+
+                if (!ContainsTargetValue(context, targetTable, targetColumn, value))
+                {
+                    throw new InvalidOperationException(
+                        $"{SourceLocation(sourceTable, sourceRow, sourceColumn)}: " +
+                        $"{DisplayTable(targetTable)}.{targetTable.Headers[targetColumn]}에서 값 '{value}'을(를) 찾을 수 없습니다. " +
+                        "(keyref 존재 검증)");
+                }
+            }
+        }
+
+        private static bool ContainsTargetValue(
+            Context context,
+            CsvTableParseResult targetTable,
+            int targetColumn,
+            string value)
+        {
+            int idColumn = CsvTableParser.FindIdColumnIndex(targetTable.Headers);
+            if (targetColumn == idColumn)
+                return GetIdIndex(context, targetTable).ContainsKey(value);
+
+            string cacheKey = targetTable.ClassName + ":" + targetColumn;
+            if (!context.ColumnValueIndexes.TryGetValue(cacheKey, out HashSet<string> values))
+            {
+                values = new HashSet<string>(StringComparer.Ordinal);
+                for (int row = 0; row < targetTable.DataRows.Count; row++)
+                {
+                    string candidate = NormalizeKey(ResolveCellValue(
+                        context,
+                        targetTable,
+                        row,
+                        targetColumn,
+                        new HashSet<string>(StringComparer.OrdinalIgnoreCase)));
+                    if (!string.IsNullOrEmpty(candidate))
+                        values.Add(candidate);
+                }
+                context.ColumnValueIndexes.Add(cacheKey, values);
+            }
+
+            return values.Contains(value);
         }
 
         private static CsvTableParseResult FindTable(

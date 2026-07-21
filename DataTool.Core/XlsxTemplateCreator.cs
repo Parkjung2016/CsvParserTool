@@ -119,7 +119,7 @@ namespace CSVParserTool
             ws.Cell(FirstDataRow, FirstExportCol).Style.NumberFormat.Format = "0";
             ws.Cell(FirstDataRow, LastCol).Style.NumberFormat.Format = "0";
 
-            ws.SheetView.Freeze(FirstDataRow - 1, NoteCol);
+            ws.SheetView.Freeze(FirstDataRow - 1, FirstExportCol);
         }
 
         private static void ApplySchemaStyles(IXLWorksheet ws)
@@ -456,7 +456,8 @@ namespace CSVParserTool
                 $"LOWER({baseType})<>\"string\"," +
                 $"LOWER({baseType})<>\"str\"," +
                 $"LOWER(LEFT({baseType},5))<>\"enum:\"," +
-                $"LOWER(LEFT({baseType},4))<>\"ref \"" +
+                $"LOWER(LEFT({baseType},4))<>\"ref \"," +
+                $"LOWER(LEFT({baseType},7))<>\"keyref \"" +
                 ")";
 
             return "IF(LEFT(" + headerCellRef + ",1)=\"#\",FALSE," +

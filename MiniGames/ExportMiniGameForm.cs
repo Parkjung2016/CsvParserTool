@@ -80,6 +80,16 @@ namespace CSVParserTool.MiniGames
             canvas.SetExportRunning(true);
         }
 
+        public void RenderFirstFrame()
+        {
+            if (IsDisposed || !Visible)
+                return;
+
+            PerformLayout();
+            canvas.Invalidate();
+            canvas.Update();
+        }
+
         public void UpdateExportProgress(string message)
         {
             if (exportRunning && !string.IsNullOrWhiteSpace(message))
