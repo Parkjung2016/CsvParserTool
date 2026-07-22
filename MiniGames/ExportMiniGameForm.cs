@@ -10,6 +10,8 @@ namespace CSVParserTool.MiniGames
         private readonly ComboBox gameSelector = new ComboBox();
         private readonly ComboBox difficultySelector = new ComboBox();
         private readonly Button restartButton = new Button();
+        private readonly Button continuePlayingButton = new Button();
+        private readonly Timer autoCloseTimer = new Timer { Interval = 100 };
 
         private readonly Label descriptionLabel = new Label();
         private readonly Label exportStatusLabel = new Label();
@@ -21,6 +23,8 @@ namespace CSVParserTool.MiniGames
         private bool exportRunning;
         private int currentScore;
         private int currentHighScore;
+        private DateTime autoCloseDeadlineUtc;
+        private string completionStatusText = string.Empty;
 
         public ExportMiniGameForm(Action<string> warning)
         {
@@ -28,9 +32,10 @@ namespace CSVParserTool.MiniGames
             StartPosition = FormStartPosition.Manual;
             MinimumSize = new Size(500, 400);
             ClientSize = new Size(660, 520);
-            KeyPreview = false;
+            KeyPreview = true;
 
             games = MiniGameCatalog.Discover(warning).ToArray();
+            autoCloseTimer.Tick += (_, __) => UpdateAutoCloseCountdown();
             BuildLayout();
             ApplyTheme();
 
@@ -73,6 +78,7 @@ namespace CSVParserTool.MiniGames
         }
         public void StartExport()
         {
+            CancelAutoClose();
             SelectRandomGame();
             exportRunning = true;
             exportStatusLabel.Text = "Export 진행 중 · 게임은 Export 속도에 영향을 주지 않습니다.";
@@ -99,11 +105,59 @@ namespace CSVParserTool.MiniGames
         public void CompleteExport(bool success, string message)
         {
             exportRunning = false;
-            exportStatusLabel.Text = string.IsNullOrWhiteSpace(message)
+            completionStatusText = string.IsNullOrWhiteSpace(message)
                 ? success ? "Export 완료" : "Export 실패"
                 : message;
             exportStatusLabel.ForeColor = success ? UiTheme.LogSuccess : UiTheme.LogError;
             canvas.SetExportRunning(false);
+            StartAutoCloseCountdown();
+        }
+
+        private void StartAutoCloseCountdown()
+        {
+            autoCloseDeadlineUtc = DateTime.UtcNow.AddSeconds(3);
+            continuePlayingButton.Visible = true;
+            UpdateAutoCloseCountdown();
+            autoCloseTimer.Start();
+        }
+
+        private void UpdateAutoCloseCountdown()
+        {
+            if (IsDisposed)
+            {
+                autoCloseTimer.Stop();
+                return;
+            }
+
+            TimeSpan remaining = autoCloseDeadlineUtc - DateTime.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+            {
+                autoCloseTimer.Stop();
+                Close();
+                return;
+            }
+
+            int seconds = Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds));
+            exportStatusLabel.Text =
+                $"{completionStatusText} · {seconds}초 후 자동으로 닫힘 · Enter를 누르면 계속 플레이";
+        }
+
+        private void ContinuePlaying()
+        {
+            if (!autoCloseTimer.Enabled && !continuePlayingButton.Visible)
+                return;
+
+            autoCloseTimer.Stop();
+            continuePlayingButton.Visible = false;
+            exportStatusLabel.Text = $"{completionStatusText} · 계속 플레이 중";
+            canvas.Focus();
+        }
+
+        private void CancelAutoClose()
+        {
+            autoCloseTimer.Stop();
+            continuePlayingButton.Visible = false;
+            completionStatusText = string.Empty;
         }
 
         public void ApplyTheme()
@@ -117,6 +171,7 @@ namespace CSVParserTool.MiniGames
             UiTheme.StyleCombo(gameSelector);
             UiTheme.StyleCombo(difficultySelector);
             UiTheme.StyleSecondaryButton(restartButton);
+            UiTheme.StyleSecondaryButton(continuePlayingButton);
             canvas.SetPalette(CreatePalette());
             Invalidate(true);
         }
@@ -158,6 +213,11 @@ namespace CSVParserTool.MiniGames
             restartButton.Text = "다시 시작";
             restartButton.AutoSize = true;
             restartButton.Click += (_, __) => LoadSelectedGame(preserveDifficulty: true);
+            continuePlayingButton.Text = "계속 플레이 (Enter)";
+            continuePlayingButton.AutoSize = true;
+            continuePlayingButton.Visible = false;
+            continuePlayingButton.AccessibleName = "미니게임 계속 플레이";
+            continuePlayingButton.Click += (_, __) => ContinuePlaying();
 
             scoreLabel.Text = "Score 0  ·  Best 0";
             scoreLabel.AutoSize = true;
@@ -189,13 +249,48 @@ namespace CSVParserTool.MiniGames
             canvas.Margin = Padding.Empty;
             exportStatusLabel.Dock = DockStyle.Fill;
             exportStatusLabel.AutoSize = true;
-            exportStatusLabel.Padding = new Padding(2, 10, 2, 0);
+            exportStatusLabel.Padding = new Padding(2, 10, 8, 0);
+
+            var statusBar = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                ColumnCount = 2,
+                Margin = Padding.Empty
+            };
+            statusBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            statusBar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            statusBar.Controls.Add(exportStatusLabel, 0, 0);
+            statusBar.Controls.Add(continuePlayingButton, 1, 0);
 
             root.Controls.Add(toolbar, 0, 0);
             root.Controls.Add(descriptionLabel, 0, 1);
             root.Controls.Add(canvas, 0, 2);
-            root.Controls.Add(exportStatusLabel, 0, 3);
+            root.Controls.Add(statusBar, 0, 3);
             Controls.Add(root);
+        }
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if ((keyData & Keys.KeyCode) == Keys.Enter
+                && (autoCloseTimer.Enabled || continuePlayingButton.Visible))
+            {
+                ContinuePlaying();
+                return true;
+            }
+
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                autoCloseTimer.Stop();
+                autoCloseTimer.Dispose();
+            }
+
+            base.Dispose(disposing);
         }
 
         protected override void OnResize(EventArgs e)
