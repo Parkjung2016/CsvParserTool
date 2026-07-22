@@ -124,7 +124,7 @@ namespace CSVParserTool
             int barWidth = Math.Max(PhaseCount * 40, ClientSize.Width);
             var barRect = new Rectangle(0, barTop, barWidth, BarHeight);
 
-            Color trackColor = UiTheme.IsDarkMode
+            Color trackColor = UITheme.IsDarkMode
                 ? Color.FromArgb(55, 55, 60)
                 : Color.FromArgb(229, 231, 235);
 
@@ -132,7 +132,7 @@ namespace CSVParserTool
             using (var path = CreateRoundedRect(barRect, 4))
             {
                 g.FillPath(trackBrush, path);
-                using (var borderPen = new Pen(UiTheme.Border, 1f))
+                using (var borderPen = new Pen(UITheme.Border, 1f))
                     g.DrawPath(borderPen, path);
             }
 
@@ -146,7 +146,7 @@ namespace CSVParserTool
                 DrawSegmentFill(g, segmentRect, i);
             }
 
-            using (var dividerPen = new Pen(UiTheme.BorderStrong, 1f))
+            using (var dividerPen = new Pen(UITheme.BorderStrong, 1f))
             {
                 for (int i = 1; i < PhaseCount; i++)
                 {
@@ -172,7 +172,7 @@ namespace CSVParserTool
 
                     Color labelColor = LabelColorForState(_states[i]);
                     using (var brush = new SolidBrush(labelColor))
-                        g.DrawString(_captions[i], UiTheme.FontUi, brush, labelRect, format);
+                        g.DrawString(_captions[i], UITheme.FontUI, brush, labelRect, format);
                 }
             }
         }
@@ -208,7 +208,7 @@ namespace CSVParserTool
 
         private void UpdateMarqueeTimer()
         {
-            if (!SystemInformation.IsMenuAnimationEnabled || UiTheme.CurrentTheme != AppTheme.Default)
+            if (!SystemInformation.IsMenuAnimationEnabled || UITheme.CurrentTheme != AppTheme.Default)
             {
                 for (int i = 0; i < PhaseCount; i++)
                     _displayProgress[i] = _progress[i];
@@ -255,7 +255,7 @@ namespace CSVParserTool
                         if (fillWidth > 0)
                         {
                             var fillRect = new Rectangle(inner.X, inner.Y, fillWidth, inner.Height);
-                            using (var brush = new SolidBrush(UiTheme.Accent))
+                            using (var brush = new SolidBrush(UITheme.Accent))
                                 g.FillRectangle(brush, fillRect);
                             DrawProgressShimmer(g, fillRect);
                         }
@@ -267,12 +267,12 @@ namespace CSVParserTool
                     break;
 
                 case SegmentedPhaseState.Done:
-                    using (var brush = new SolidBrush(UiTheme.LogSuccess))
+                    using (var brush = new SolidBrush(UITheme.LogSuccess))
                         g.FillRectangle(brush, inner);
                     break;
 
                 case SegmentedPhaseState.Skipped:
-                    Color skipped = UiTheme.IsDarkMode
+                    Color skipped = UITheme.IsDarkMode
                         ? Color.FromArgb(90, 90, 96)
                         : Color.FromArgb(209, 213, 219);
                     using (var brush = new SolidBrush(skipped))
@@ -284,7 +284,7 @@ namespace CSVParserTool
                         float fillRatio = progress > 0f ? progress : 1f;
                         int fillWidth = Math.Max(1, (int)Math.Round(inner.Width * fillRatio));
                         fillWidth = Math.Min(fillWidth, inner.Width);
-                        using (var brush = new SolidBrush(UiTheme.LogError))
+                        using (var brush = new SolidBrush(UITheme.LogError))
                             g.FillRectangle(brush, new Rectangle(inner.X, inner.Y, fillWidth, inner.Height));
                     }
                     break;
@@ -304,8 +304,8 @@ namespace CSVParserTool
 
             using (var brush = new LinearGradientBrush(
                 blockRect,
-                Color.FromArgb(40, UiTheme.Accent),
-                UiTheme.Accent,
+                Color.FromArgb(40, UITheme.Accent),
+                UITheme.Accent,
                 LinearGradientMode.Horizontal))
             {
                 g.FillRectangle(brush, blockRect);
@@ -354,15 +354,15 @@ namespace CSVParserTool
             switch (state)
             {
                 case SegmentedPhaseState.Running:
-                    return UiTheme.StatusRunning;
+                    return UITheme.StatusRunning;
                 case SegmentedPhaseState.Done:
-                    return UiTheme.LogSuccess;
+                    return UITheme.LogSuccess;
                 case SegmentedPhaseState.Failed:
-                    return UiTheme.LogError;
+                    return UITheme.LogError;
                 case SegmentedPhaseState.Skipped:
-                    return UiTheme.TextMuted;
+                    return UITheme.TextMuted;
                 default:
-                    return UiTheme.TextMuted;
+                    return UITheme.TextMuted;
             }
         }
 

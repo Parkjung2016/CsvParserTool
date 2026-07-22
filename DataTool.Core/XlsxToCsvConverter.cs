@@ -174,7 +174,7 @@ namespace CSVParserTool
             return "\"" + s.Replace("\"", "\"\"") + "\"";
         }
 
-        /// <summary>CSV·NDB 파이프라인용. 헤더가 <c>#</c> 로 시작하는 열은 통째로 제외(엑셀 원본 시트는 변경하지 않음).</summary>
+        /// <summary>CSV Export용. 헤더가 <c>#</c> 로 시작하는 열은 통째로 제외(엑셀 원본 시트는 변경하지 않음).</summary>
         private static string BuildExportCsvFromWorksheet(IXLWorksheet ws, IXLRange used)
         {
             int c0 = used.FirstColumn().ColumnNumber();

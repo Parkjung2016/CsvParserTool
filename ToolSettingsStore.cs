@@ -26,8 +26,6 @@ namespace CSVParserTool
             public string ExportVersion = "1.0.0";
             public bool RemoveOrphanArtifactsOnExport = true;
             public Dictionary<string, int> MiniGameHighScores = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            public int Quality;
-            public DateTime LastWriteTimeUtc;
         }
 
         public static string SettingsFilePath => Path.Combine(
@@ -106,7 +104,7 @@ namespace CSVParserTool
                     IsFirstRun = !File.Exists(SettingsFilePath);
                     if (!TryReadSnapshot(SettingsFilePath, out Snapshot snapshot))
                     {
-                        snapshot = FindBestLegacySnapshot() ?? new Snapshot();
+                        snapshot = new Snapshot();
                         WriteSnapshot(SettingsFilePath, snapshot);
                     }
                     current = snapshot;
@@ -130,7 +128,6 @@ namespace CSVParserTool
             {
                 try
                 {
-                    current.Quality = CalculateQuality(current);
                     WriteSnapshot(SettingsFilePath, current);
                 }
                 catch (Exception ex)
@@ -144,38 +141,6 @@ namespace CSVParserTool
         {
             if (!loaded)
                 Load();
-        }
-
-        private static Snapshot FindBestLegacySnapshot()
-        {
-            string root = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "PJDev");
-            if (!Directory.Exists(root))
-                return null;
-
-            var candidates = new List<Snapshot>();
-            try
-            {
-                foreach (string path in Directory.GetFiles(root, "user.config", SearchOption.AllDirectories))
-                {
-                    if (path.IndexOf("PJDevDataToolUpdater.exe_", StringComparison.OrdinalIgnoreCase) >= 0)
-                        continue;
-                    if (!TryReadSnapshot(path, out Snapshot snapshot))
-                        continue;
-                    snapshot.LastWriteTimeUtc = File.GetLastWriteTimeUtc(path);
-                    candidates.Add(snapshot);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine("이전 사용자 설정 검색 실패: " + ex.Message);
-            }
-
-            return candidates
-                .OrderByDescending(candidate => candidate.Quality)
-                .ThenByDescending(candidate => candidate.LastWriteTimeUtc)
-                .FirstOrDefault();
         }
 
         private static bool TryReadSnapshot(string path, out Snapshot snapshot)
@@ -197,15 +162,10 @@ namespace CSVParserTool
                     document.Load(reader);
                 }
 
-                bool fixedFormat = document.DocumentElement?.Name == "DataToolSettings";
-                string Read(string name)
-                {
-                    XmlNode node = fixedFormat
-                        ? document.DocumentElement.SelectSingleNode(name)
-                        : document.SelectSingleNode("//setting[@name='" + name + "']/value");
-                    return node?.InnerText;
-                }
+                if (document.DocumentElement?.Name != "DataToolSettings")
+                    return false;
 
+                string Read(string name) => document.DocumentElement.SelectSingleNode(name)?.InnerText;
                 string projectRoot = Read("ProjectRootPath");
                 string excelSource = Read("ExcelSourceFolderPath");
                 string darkMode = Read("DarkMode");
@@ -216,18 +176,15 @@ namespace CSVParserTool
                     return false;
 
                 var miniGameHighScores = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-                if (fixedFormat)
+                foreach (XmlNode scoreNode in document.DocumentElement.SelectNodes("MiniGameHighScores/Score"))
                 {
-                    foreach (XmlNode scoreNode in document.DocumentElement.SelectNodes("MiniGameHighScores/Score"))
-                    {
-                        if (!(scoreNode is XmlElement scoreElement))
-                            continue;
-                        string key = scoreElement.GetAttribute("key");
-                        if (!string.IsNullOrWhiteSpace(key)
-                            && int.TryParse(scoreElement.GetAttribute("value"), out int value)
-                            && value >= 0)
-                            miniGameHighScores[key] = value;
-                    }
+                    if (!(scoreNode is XmlElement scoreElement))
+                        continue;
+                    string key = scoreElement.GetAttribute("key");
+                    if (!string.IsNullOrWhiteSpace(key)
+                        && int.TryParse(scoreElement.GetAttribute("value"), out int value)
+                        && value >= 0)
+                        miniGameHighScores[key] = value;
                 }
 
                 snapshot = new Snapshot
@@ -240,7 +197,6 @@ namespace CSVParserTool
                     RemoveOrphanArtifactsOnExport = !bool.TryParse(removeOrphans, out bool remove) || remove,
                     MiniGameHighScores = miniGameHighScores
                 };
-                snapshot.Quality = CalculateQuality(snapshot);
                 return true;
             }
             catch (Exception ex)
@@ -248,16 +204,6 @@ namespace CSVParserTool
                 Debug.WriteLine("사용자 설정 읽기 실패 (" + path + "): " + ex.Message);
                 return false;
             }
-        }
-
-        private static int CalculateQuality(Snapshot snapshot)
-        {
-            int quality = 0;
-            if (!string.IsNullOrWhiteSpace(snapshot.ProjectRootPath)) quality += 4;
-            if (!string.IsNullOrWhiteSpace(snapshot.ExcelSourceFolderPath)) quality += 4;
-            if (snapshot.DarkMode) quality += 1;
-            if (!string.IsNullOrWhiteSpace(snapshot.ExportVersion)) quality += 1;
-            return quality;
         }
 
         private static void WriteSnapshot(string path, Snapshot snapshot)

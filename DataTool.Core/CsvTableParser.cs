@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace CSVParserTool
@@ -22,7 +23,7 @@ namespace CSVParserTool
         }
     }
 
-    /// <summary>CSV 한 테이블 파싱 결과 — 코드 생성·MessagePack·NDB보내기 공통.</summary>
+    /// <summary>CSV 한 테이블 파싱 결과 — 코드 생성·CSV·MessagePack 공통.</summary>
     public sealed class CsvTableParseResult
     {
         public string ClassName { get; }
@@ -95,7 +96,7 @@ namespace CSVParserTool
     {
         /// <summary>
         /// 헤더가 <c>#</c> 로 시작하면 그 열 전체를 메모 열로 본다 (<c>#</c>, <c>#설명</c> 등 모두 동일).
-        /// 아래 셀에 <c>#</c> 없이 <c>플레이어</c>만 있어도 CSV·NDB·bytes보내기에서 제외한다. 엑셀 원본은 유지.
+        /// 아래 셀에 <c>#</c> 없이 <c>플레이어</c>만 있어도 CSV·bytes 내보내기에서 제외한다. 엑셀 원본은 유지.
         /// </summary>
         public static bool IsNoteColumnHeader(string header)
         {
@@ -254,7 +255,11 @@ namespace CSVParserTool
             for (int t = firstDataTableIndex; t < tableLineIndexes.Count; t++)
             {
                 string[] row = FilterExportColumns(SplitCsvLine(lines[tableLineIndexes[t]]), noteKeepMask);
-                dataRows.Add(FilterColumnsByMask(row, versionKeepMask));
+                string[] filteredRow = FilterColumnsByMask(row, versionKeepMask);
+                if (filteredRow.All(string.IsNullOrWhiteSpace))
+                    continue;
+
+                dataRows.Add(filteredRow);
             }
 
             ValidateUniqueIds(className, headers, columnTypes, dataRows);
@@ -307,6 +312,12 @@ namespace CSVParserTool
                 string rawId = cells != null && idColumn < cells.Length
                     ? cells[idColumn]
                     : string.Empty;
+                if (string.IsNullOrWhiteSpace(rawId))
+                {
+                    throw new InvalidOperationException(
+                        $"{className}: 데이터 {row + 1}번째 행의 Id가 비어 있습니다. Id는 반드시 입력해야 합니다.");
+                }
+
                 string normalizedId = NormalizeIdForUniqueness(rawId, idType);
                 if (firstRowById.TryGetValue(normalizedId, out int firstRow))
                 {

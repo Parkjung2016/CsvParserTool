@@ -197,28 +197,28 @@ namespace CSVParserTool
 
         private void ApplyTheme()
         {
-            BackColor = UiTheme.AppBackground;
-            ForeColor = UiTheme.TextPrimary;
-            Font = UiTheme.FontUi;
+            BackColor = UITheme.AppBackground;
+            ForeColor = UITheme.TextPrimary;
+            Font = UITheme.FontUI;
 
-            header.BackColor = UiTheme.HeaderBackground;
+            header.BackColor = UITheme.HeaderBackground;
             title.Font = new Font("Segoe UI Semibold", 15F, FontStyle.Regular, GraphicsUnit.Point);
-            title.ForeColor = UiTheme.TextPrimary;
-            subtitle.Font = UiTheme.FontSubtitle;
-            subtitle.ForeColor = UiTheme.TextMuted;
+            title.ForeColor = UITheme.TextPrimary;
+            subtitle.Font = UITheme.FontSubtitle;
+            subtitle.ForeColor = UITheme.TextMuted;
 
-            navigation.BackColor = UiTheme.SurfaceMuted;
+            navigation.BackColor = UITheme.SurfaceMuted;
             mascot.BackColor = Color.Transparent;
-            contentHost.BackColor = UiTheme.Surface;
-            content.BackColor = UiTheme.Surface;
-            content.ForeColor = UiTheme.TextPrimary;
+            contentHost.BackColor = UITheme.Surface;
+            content.BackColor = UITheme.Surface;
+            content.ForeColor = UITheme.TextPrimary;
 
-            UiTheme.StyleSecondaryButton(closeButton);
+            UITheme.StyleSecondaryButton(closeButton);
             closeButton.MinimumSize = new Size(72, 32);
 
             foreach (Button button in navigationButtons)
             {
-                button.Font = UiTheme.FontUiMedium;
+                button.Font = UITheme.FontUIMedium;
                 button.FlatAppearance.BorderSize = 0;
                 button.Padding = new Padding(12, 0, 8, 0);
             }
@@ -237,8 +237,8 @@ namespace CSVParserTool
             for (int i = 0; i < navigationButtons.Count; i++)
             {
                 bool selected = i == selectedSectionIndex;
-                navigationButtons[i].BackColor = selected ? UiTheme.Accent : UiTheme.SurfaceMuted;
-                navigationButtons[i].ForeColor = selected ? UiTheme.TextOnAccent : UiTheme.TextSecondary;
+                navigationButtons[i].BackColor = selected ? UITheme.Accent : UITheme.SurfaceMuted;
+                navigationButtons[i].ForeColor = selected ? UITheme.TextOnAccent : UITheme.TextSecondary;
             }
 
             content.SuspendLayout();
@@ -278,7 +278,7 @@ namespace CSVParserTool
                     break;
             }
         }
-        private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled && UiTheme.CurrentTheme == AppTheme.Default;
+        private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled && UITheme.CurrentTheme == AppTheme.Default;
 
         private void ToolInfoForm_Shown(object sender, EventArgs e)
         {
@@ -324,14 +324,14 @@ namespace CSVParserTool
             contentTransitionOverlay = new BufferedPanel
             {
                 Bounds = content.Bounds,
-                BackColor = UiTheme.Surface,
+                BackColor = UITheme.Surface,
                 TabStop = false
             };
             contentTransitionOverlay.Controls.Add(new Panel
             {
                 Dock = DockStyle.Right,
                 Width = 3,
-                BackColor = UiTheme.Accent
+                BackColor = UITheme.Accent
             });
             contentHost.Controls.Add(contentTransitionOverlay);
             contentTransitionOverlay.BringToFront();
@@ -400,9 +400,9 @@ namespace CSVParserTool
             Bullet("프로젝트 경로는 Assets 폴더가 아니라 Unity 프로젝트 루트를 선택합니다.");
             Bullet("XLSX 원본은 작업용 엑셀 파일을 모아 둔 폴더입니다.");
             Bullet("~$로 시작하는 Excel 임시 파일은 목록과 Export에서 제외됩니다.");
-            Subheading("원본이 삭제된 테이블의 이전 파일 정리");
-            Body("예전에 DT_Item.xlsx를 Export한 뒤 원본 XLSX를 삭제하면, 지난번에 만든 DT_Item의 CSV·게임용 데이터·C# 파일이 남을 수 있습니다. 이 옵션을 켜면 그런 이전 파일을 함께 삭제합니다.");
-            Note("이전 출력 파일을 직접 보관하고 싶다면 ‘원본 XLSX가 없는 이전 출력 파일 삭제’ 옵션을 끄세요.");
+            Subheading("원본 없는 테이블 산출물 정리");
+            Body("원본 XLSX가 없는 테이블의 CSV·게임용 데이터·C# 파일을 Export할 때 자동으로 정리합니다.");
+            Note("원본 없이 산출물만 보관하려면 ‘원본 없는 테이블 산출물 정리’ 옵션을 끄세요.");
         }
 
         private void RenderTableLayout()
@@ -542,22 +542,22 @@ namespace CSVParserTool
         }
         private void Heading(string text)
         {
-            AddText(text, headingFont, UiTheme.TextPrimary, new Padding(0, 0, 0, 14));
+            AddText(text, headingFont, UITheme.TextPrimary, new Padding(0, 0, 0, 14));
         }
 
         private void Subheading(string text)
         {
-            AddText(text, subheadingFont, UiTheme.TextPrimary, new Padding(0, 18, 0, 8));
+            AddText(text, subheadingFont, UITheme.TextPrimary, new Padding(0, 18, 0, 8));
         }
 
         private void Body(string text)
         {
-            AddText(text, bodyFont, UiTheme.TextSecondary, new Padding(0, 0, 0, 10));
+            AddText(text, bodyFont, UITheme.TextSecondary, new Padding(0, 0, 0, 10));
         }
 
         private void Bullet(string text)
         {
-            Label label = CreateWrappedLabel("•  " + text, bodyFont, UiTheme.TextSecondary);
+            Label label = CreateWrappedLabel("•  " + text, bodyFont, UITheme.TextSecondary);
             label.Padding = new Padding(12, 0, 0, 0);
             AddFullWidth(label, new Padding(0, 0, 0, 6));
         }
@@ -572,7 +572,7 @@ namespace CSVParserTool
                 RowCount = 1,
                 Width = width,
                 Height = 36,
-                BackColor = UiTheme.Surface,
+                BackColor = UITheme.Surface,
                 Margin = new Padding(0, 0, 0, 8)
             };
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 38F));
@@ -583,12 +583,12 @@ namespace CSVParserTool
                 Text = number,
                 Size = new Size(28, 28),
                 Margin = new Padding(0, 2, 10, 2),
-                BackColor = UiTheme.Accent,
-                ForeColor = UiTheme.TextOnAccent,
+                BackColor = UITheme.Accent,
+                ForeColor = UITheme.TextOnAccent,
                 Font = bodyMediumFont,
                 TextAlign = ContentAlignment.MiddleCenter
             };
-            Label description = CreateWrappedLabel(text, bodyFont, UiTheme.TextSecondary);
+            Label description = CreateWrappedLabel(text, bodyFont, UITheme.TextSecondary);
             description.Anchor = AnchorStyles.Left | AnchorStyles.Right;
             description.Margin = new Padding(0, 5, 0, 2);
 
@@ -622,29 +622,29 @@ namespace CSVParserTool
                 ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
                 AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                BackgroundColor = UiTheme.Surface,
+                BackgroundColor = UITheme.Surface,
                 BorderStyle = BorderStyle.FixedSingle,
                 CellBorderStyle = DataGridViewCellBorderStyle.Single,
-                GridColor = UiTheme.Border,
+                GridColor = UITheme.Border,
                 ScrollBars = ScrollBars.None,
                 TabStop = false,
                 EnableHeadersVisualStyles = false
             };
 
-            grid.ColumnHeadersDefaultCellStyle.BackColor = UiTheme.Accent;
-            grid.ColumnHeadersDefaultCellStyle.ForeColor = UiTheme.TextOnAccent;
+            grid.ColumnHeadersDefaultCellStyle.BackColor = UITheme.Accent;
+            grid.ColumnHeadersDefaultCellStyle.ForeColor = UITheme.TextOnAccent;
             grid.ColumnHeadersDefaultCellStyle.Font = bodyMediumFont;
             grid.ColumnHeadersDefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft;
             grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(8, 0, 6, 0);
-            grid.DefaultCellStyle.BackColor = UiTheme.Surface;
-            grid.DefaultCellStyle.ForeColor = UiTheme.TextPrimary;
+            grid.DefaultCellStyle.BackColor = UITheme.Surface;
+            grid.DefaultCellStyle.ForeColor = UITheme.TextPrimary;
             grid.DefaultCellStyle.Font = bodyFont;
             grid.DefaultCellStyle.Padding = new Padding(8, 0, 6, 0);
-            grid.DefaultCellStyle.SelectionBackColor = UiTheme.Surface;
-            grid.DefaultCellStyle.SelectionForeColor = UiTheme.TextPrimary;
-            grid.AlternatingRowsDefaultCellStyle.BackColor = UiTheme.SurfaceMuted;
-            grid.AlternatingRowsDefaultCellStyle.SelectionBackColor = UiTheme.SurfaceMuted;
-            grid.AlternatingRowsDefaultCellStyle.SelectionForeColor = UiTheme.TextPrimary;
+            grid.DefaultCellStyle.SelectionBackColor = UITheme.Surface;
+            grid.DefaultCellStyle.SelectionForeColor = UITheme.TextPrimary;
+            grid.AlternatingRowsDefaultCellStyle.BackColor = UITheme.SurfaceMuted;
+            grid.AlternatingRowsDefaultCellStyle.SelectionBackColor = UITheme.SurfaceMuted;
+            grid.AlternatingRowsDefaultCellStyle.SelectionForeColor = UITheme.TextPrimary;
             grid.RowTemplate.Height = 32;
 
             for (int column = 0; column < headers.Length; column++)
@@ -690,7 +690,7 @@ namespace CSVParserTool
                 Width = GetContentWidth(),
                 Height = Math.Max(58, lineCount * 20 + 24),
                 Padding = new Padding(12, 10, 12, 10),
-                BackColor = UiTheme.SurfaceMuted,
+                BackColor = UITheme.SurfaceMuted,
                 Margin = new Padding(0, 8, 0, 12)
             };
 
@@ -700,11 +700,11 @@ namespace CSVParserTool
                 Text = text ?? string.Empty,
                 ReadOnly = true,
                 BorderStyle = BorderStyle.None,
-                BackColor = UiTheme.SurfaceMuted,
-                ForeColor = UiTheme.IsDarkMode
+                BackColor = UITheme.SurfaceMuted,
+                ForeColor = UITheme.IsDarkMode
                     ? Color.FromArgb(191, 219, 254)
                     : Color.FromArgb(30, 64, 175),
-                Font = UiTheme.FontMonoFallback,
+                Font = UITheme.FontMonoFallback,
                 WordWrap = false,
                 ScrollBars = RichTextBoxScrollBars.None,
                 TabStop = false
@@ -724,7 +724,7 @@ namespace CSVParserTool
                 Width = width,
                 Height = 52,
                 Padding = new Padding(12, 10, 12, 10),
-                BackColor = UiTheme.SurfaceMuted,
+                BackColor = UITheme.SurfaceMuted,
                 Margin = new Padding(0, 10, 0, 8)
             };
             card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 44F));
@@ -734,11 +734,11 @@ namespace CSVParserTool
             {
                 Text = "TIP",
                 AutoSize = true,
-                Font = UiTheme.FontUiMedium,
-                ForeColor = UiTheme.Accent,
+                Font = UITheme.FontUIMedium,
+                ForeColor = UITheme.Accent,
                 Margin = new Padding(0, 2, 8, 0)
             };
-            Label description = CreateWrappedLabel(text, noteFont, UiTheme.TextSecondary);
+            Label description = CreateWrappedLabel(text, noteFont, UITheme.TextSecondary);
             description.Margin = new Padding(0, 2, 0, 0);
 
             card.Controls.Add(tip, 0, 0);

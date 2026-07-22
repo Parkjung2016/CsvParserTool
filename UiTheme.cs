@@ -13,7 +13,7 @@ namespace CSVParserTool
     }
 
     /// <summary>라이트/다크 테마 + 공통 컨트롤 스타일.</summary>
-    internal static class UiTheme
+    internal static class UITheme
     {
         public static bool IsDarkMode { get; private set; }
         public static AppTheme CurrentTheme { get; private set; }
@@ -47,15 +47,15 @@ namespace CSVParserTool
         public static Color DepthHighlight { get; private set; }
         public static Color DepthShadow { get; private set; }
 
-        public static readonly Font FontUi = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
-        public static readonly Font FontUiMedium = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point);
+        public static readonly Font FontUI = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
+        public static readonly Font FontUIMedium = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point);
         public static readonly Font FontTitle = new Font("Segoe UI Semibold", 13F, FontStyle.Regular, GraphicsUnit.Point);
         public static readonly Font FontSubtitle = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
         public static readonly Font FontSection = new Font("Segoe UI Semibold", 8.25F, FontStyle.Regular, GraphicsUnit.Point);
         public static readonly Font FontMono = new Font("Cascadia Mono", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
         public static readonly Font FontMonoFallback = new Font("Consolas", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
 
-        static UiTheme()
+        static UITheme()
         {
             SetDarkMode(false);
         }
@@ -290,7 +290,7 @@ namespace CSVParserTool
 
         internal static void StyleCaptionLabel(Label label)
         {
-            label.Font = FontUiMedium;
+            label.Font = FontUIMedium;
             label.ForeColor = TextSecondary;
         }
 
@@ -305,7 +305,7 @@ namespace CSVParserTool
 
         internal static void StyleTextField(TextBox textBox)
         {
-            textBox.Font = FontUi;
+            textBox.Font = FontUI;
             textBox.BorderStyle = CurrentTheme == AppTheme.Default ? BorderStyle.FixedSingle : BorderStyle.Fixed3D;
             textBox.BackColor = Surface;
             textBox.ForeColor = TextPrimary;
@@ -314,7 +314,7 @@ namespace CSVParserTool
 
         internal static void StyleCombo(ComboBox combo)
         {
-            combo.Font = FontUi;
+            combo.Font = FontUI;
             combo.FlatStyle = CurrentTheme == AppTheme.Default ? FlatStyle.Flat : FlatStyle.Standard;
             combo.BackColor = Surface;
             combo.ForeColor = TextPrimary;
@@ -322,7 +322,7 @@ namespace CSVParserTool
 
         internal static void StyleCheckBox(CheckBox checkBox)
         {
-            checkBox.Font = FontUi;
+            checkBox.Font = FontUI;
             checkBox.ForeColor = TextSecondary;
             checkBox.BackColor = Color.Transparent;
             checkBox.AutoSize = true;
@@ -330,7 +330,7 @@ namespace CSVParserTool
 
         internal static void StyleList(ListBox listBox)
         {
-            listBox.Font = FontUiMedium;
+            listBox.Font = FontUIMedium;
             listBox.BorderStyle = BorderStyle.None;
             listBox.BackColor = Surface;
             listBox.ForeColor = TextPrimary;
@@ -372,16 +372,27 @@ namespace CSVParserTool
             bar.Height = 18;
         }
 
-        internal static void StyleExportListView(ListView listView)
+        internal static void StyleExportGrid(DataGridView grid)
         {
-            listView.View = View.Details;
-            listView.FullRowSelect = true;
-            listView.HeaderStyle = ColumnHeaderStyle.Nonclickable;
-            listView.BorderStyle = BorderStyle.None;
-            listView.BackColor = Surface;
-            listView.ForeColor = TextPrimary;
-            listView.Font = FontUi;
-            listView.GridLines = true;
+            grid.BorderStyle = BorderStyle.None;
+            grid.BackgroundColor = Surface;
+            grid.GridColor = Border;
+            grid.Font = FontUI;
+            grid.EnableHeadersVisualStyles = false;
+            grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
+            grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
+            grid.ColumnHeadersDefaultCellStyle.BackColor = SurfaceMuted;
+            grid.ColumnHeadersDefaultCellStyle.ForeColor = TextPrimary;
+            grid.ColumnHeadersDefaultCellStyle.Font = FontUIMedium;
+            grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = SurfaceMuted;
+            grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = TextPrimary;
+            grid.DefaultCellStyle.BackColor = Surface;
+            grid.DefaultCellStyle.ForeColor = TextPrimary;
+            grid.DefaultCellStyle.SelectionBackColor = HeaderBackground;
+            grid.DefaultCellStyle.SelectionForeColor = TextPrimary;
+            grid.DefaultCellStyle.WrapMode = DataGridViewTriState.False;
+            grid.RowsDefaultCellStyle.BackColor = Surface;
+            grid.AlternatingRowsDefaultCellStyle.BackColor = SurfaceMuted;
         }
 
         internal static void StylePrimaryButton(Button button, bool tall = false)
@@ -391,7 +402,7 @@ namespace CSVParserTool
             button.FlatAppearance.BorderSize = 0;
             button.BackColor = Accent;
             button.ForeColor = TextOnAccent;
-            button.Font = FontUiMedium;
+            button.Font = FontUIMedium;
             button.Cursor = Cursors.Hand;
             button.Padding = new Padding(12, tall ? 8 : 4, 12, tall ? 8 : 4);
             button.MinimumSize = new Size(0, CurrentTheme == AppTheme.Default ? (tall ? 36 : 30) : (tall ? 46 : 38));
@@ -414,7 +425,7 @@ namespace CSVParserTool
             button.FlatAppearance.BorderSize = 1;
             button.BackColor = Surface;
             button.ForeColor = TextPrimary;
-            button.Font = FontUi;
+            button.Font = FontUI;
             button.Cursor = Cursors.Hand;
             button.Padding = new Padding(10, 4, 10, 4);
             button.MinimumSize = new Size(0, CurrentTheme == AppTheme.Default ? 30 : 38);

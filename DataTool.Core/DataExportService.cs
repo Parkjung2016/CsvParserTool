@@ -128,11 +128,11 @@ namespace CSVParserTool
                     {
                         int removed = DataExportSourceFilter.RemoveOrphanArtifacts(projectRoot, xlsxDtStems, log);
                         if (removed > 0)
-                            log?.Invoke($"원본 XLSX가 없는 이전 출력 파일 {removed}개 삭제.");
+                            log?.Invoke($"원본 XLSX가 없는 테이블 산출물 {removed}개 삭제.");
                     }
                     else if (!removeOrphanArtifacts && xlsxDtStems != null && xlsxDtStems.Count > 0)
                     {
-                        log?.Invoke("원본 XLSX가 없는 이전 출력 파일 삭제: OFF (기존 파일 유지).");
+                        log?.Invoke("원본 XLSX가 없는 테이블 산출물 삭제: OFF (기존 파일 유지).");
                     }
                 }
                 catch (Exception ex)
@@ -148,7 +148,6 @@ namespace CSVParserTool
             {
                 string scriptsDir = DataProjectPaths.ScriptsDataDir(projectRoot);
                 string bytesDir = DataProjectPaths.DataBytesDir(projectRoot);
-                string legacyNdbDir = DataProjectPaths.DataNdbDir(projectRoot);
                 string enumWorkbookPath = EnumCatalogService.FindWorkbook(excelSourceFolder);
                 EnumCatalog enumCatalog = enumWorkbookPath == null
                     ? null
@@ -271,9 +270,7 @@ namespace CSVParserTool
                             csvPath,
                             parsedTables[csvPath],
                             scriptsDir,
-                            dataCsv,
-                            bytesDir,
-                            legacyNdbDir);
+                            bytesDir);
                         outcomes.Add(outcome);
 
                         if (outcome.LogLines != null)
@@ -415,7 +412,7 @@ namespace CSVParserTool
                     File.Delete(generatedEnumPath);
                     if (File.Exists(generatedEnumPath + ".meta"))
                         File.Delete(generatedEnumPath + ".meta");
-                    log?.Invoke($"Enum 관리 XLSX가 없어 이전 enum 생성 파일을 삭제했습니다: {EnumCatalogService.GeneratedFileName}");
+                    log?.Invoke($"Enum 관리 XLSX가 없어 enum 생성 파일을 삭제했습니다: {EnumCatalogService.GeneratedFileName}");
                 }
 
                 Report(DataExportProgressKind.PhaseChanged, phaseLabel: "Unity 스크립트 · MessagePack 생성", phaseIndex: 2);
@@ -468,9 +465,7 @@ namespace CSVParserTool
             string csvPath,
             CsvTableParseResult table,
             string scriptsDir,
-            string dataCsv,
-            string bytesDir,
-            string legacyNdbDir)
+            string bytesDir)
         {
             var outcome = new TableExportOutcome
             {
@@ -487,13 +482,6 @@ namespace CSVParserTool
             {
                 outcome.ParseResult = table;
 
-                string legacyRecordCs = Path.Combine(scriptsDir, classFileName + ".cs");
-                if (File.Exists(legacyRecordCs))
-                {
-                    File.Delete(legacyRecordCs);
-                    outcome.LogLines.Add($"Removed legacy script (merged into Container): {legacyRecordCs}");
-                }
-
                 string csPath = Path.Combine(scriptsDir, classFileName + "Container.cs");
                 File.WriteAllText(csPath, CsvClassGenerator.GenerateTableContainerFile(table), Encoding.UTF8);
                 outcome.LogLines.Add($"Script: {csPath}");
@@ -501,37 +489,9 @@ namespace CSVParserTool
                 CsvTableParser.WriteDeployedCsv(csvPath, table);
                 outcome.LogLines.Add($"CSV: {csvPath}");
 
-                string legacyCopiedCsv = Path.Combine(dataCsv, classFileName + ".csv");
-                if (File.Exists(legacyCopiedCsv))
-                {
-                    File.Delete(legacyCopiedCsv);
-                    outcome.LogLines.Add($"Removed legacy copied CSV: {legacyCopiedCsv}");
-                }
-
-                string legacyClassBytePath = Path.Combine(bytesDir, classFileName + ".byte");
-                if (File.Exists(legacyClassBytePath))
-                {
-                    File.Delete(legacyClassBytePath);
-                    outcome.LogLines.Add($"Removed legacy byte file (use DT_ stem): {legacyClassBytePath}");
-                }
-
-                string legacyStemBytePath = Path.Combine(bytesDir, fileName + ".byte");
-                if (File.Exists(legacyStemBytePath))
-                {
-                    File.Delete(legacyStemBytePath);
-                    outcome.LogLines.Add($"Removed legacy byte extension file (use .bytes): {legacyStemBytePath}");
-                }
-
                 string bytePath = Path.Combine(bytesDir, fileName + ".bytes");
                 MessagePackTableExporter.ExportToFile(table, bytePath);
                 outcome.LogLines.Add($"Bytes: {bytePath}");
-
-                string legacyNdbPath = Path.Combine(legacyNdbDir, classFileName + ".ndb");
-                if (File.Exists(legacyNdbPath))
-                {
-                    File.Delete(legacyNdbPath);
-                    outcome.LogLines.Add($"Removed legacy NDB: {legacyNdbPath}");
-                }
 
                 outcome.ClassFileName = classFileName;
                 outcome.Success = true;

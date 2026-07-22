@@ -93,11 +93,11 @@ namespace CSVParserTool
 
         private static void DrawButton(Button button, ButtonState state, PaintEventArgs e)
         {
-            if (UiTheme.CurrentTheme == AppTheme.Default || button.Width < 8 || button.Height < 12)
+            if (UITheme.CurrentTheme == AppTheme.Default || button.Width < 8 || button.Height < 12)
                 return;
 
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            e.Graphics.Clear(button.Parent?.BackColor ?? UiTheme.AppBackground);
+            e.Graphics.Clear(button.Parent?.BackColor ?? UITheme.AppBackground);
 
             int offset = state.Pressed ? 4 : state.Hovered ? 0 : 1;
             Rectangle softShadowRect = new Rectangle(3, 6, button.Width - 6, button.Height - 7);
@@ -105,30 +105,30 @@ namespace CSVParserTool
             Rectangle faceRect = new Rectangle(1, 1 + offset, button.Width - 3, button.Height - 8);
 
             using (GraphicsPath softShadowPath = RoundedRectangle(softShadowRect, 8))
-            using (var softShadow = new SolidBrush(Color.FromArgb(UiTheme.IsDarkMode ? 155 : 85, UiTheme.DepthShadow)))
+            using (var softShadow = new SolidBrush(Color.FromArgb(UITheme.IsDarkMode ? 155 : 85, UITheme.DepthShadow)))
                 e.Graphics.FillPath(softShadow, softShadowPath);
             using (GraphicsPath sidePath = RoundedRectangle(sideRect, 8))
-            using (var sideBrush = new LinearGradientBrush(sideRect, UiTheme.BorderStrong, UiTheme.DepthShadow, 90F))
+            using (var sideBrush = new LinearGradientBrush(sideRect, UITheme.BorderStrong, UITheme.DepthShadow, 90F))
                 e.Graphics.FillPath(sideBrush, sidePath);
 
             Color baseColor = state.Primary
-                ? state.Pressed ? UiTheme.AccentPressed : state.Hovered ? UiTheme.AccentHover : UiTheme.Accent
-                : state.Pressed ? Blend(UiTheme.SurfaceMuted, Color.Black, 0.16F)
-                : state.Hovered ? Blend(UiTheme.Surface, Color.White, UiTheme.IsDarkMode ? 0.08F : 0.22F) : UiTheme.Surface;
+                ? state.Pressed ? UITheme.AccentPressed : state.Hovered ? UITheme.AccentHover : UITheme.Accent
+                : state.Pressed ? Blend(UITheme.SurfaceMuted, Color.Black, 0.16F)
+                : state.Hovered ? Blend(UITheme.Surface, Color.White, UITheme.IsDarkMode ? 0.08F : 0.22F) : UITheme.Surface;
             if (!button.Enabled)
-                baseColor = Blend(baseColor, UiTheme.AppBackground, 0.48F);
+                baseColor = Blend(baseColor, UITheme.AppBackground, 0.48F);
 
-            Color topColor = Blend(baseColor, Color.White, UiTheme.IsDarkMode ? 0.23F : 0.46F);
-            Color bottomColor = Blend(baseColor, Color.Black, UiTheme.IsDarkMode ? 0.18F : 0.14F);
+            Color topColor = Blend(baseColor, Color.White, UITheme.IsDarkMode ? 0.23F : 0.46F);
+            Color bottomColor = Blend(baseColor, Color.Black, UITheme.IsDarkMode ? 0.18F : 0.14F);
             using (GraphicsPath facePath = RoundedRectangle(faceRect, 8))
             using (var faceBrush = new LinearGradientBrush(faceRect, topColor, bottomColor, 90F))
-            using (var borderPen = new Pen(state.Primary ? UiTheme.AccentPressed : Blend(UiTheme.BorderStrong, Color.Black, 0.16F), 1.25F))
+            using (var borderPen = new Pen(state.Primary ? UITheme.AccentPressed : Blend(UITheme.BorderStrong, Color.Black, 0.16F), 1.25F))
             {
                 e.Graphics.FillPath(faceBrush, facePath);
                 e.Graphics.DrawPath(borderPen, facePath);
             }
 
-            using (var shine = new Pen(Color.FromArgb(UiTheme.IsDarkMode ? 105 : 210, Color.White), 1.5F))
+            using (var shine = new Pen(Color.FromArgb(UITheme.IsDarkMode ? 105 : 210, Color.White), 1.5F))
             {
                 e.Graphics.DrawLine(shine, faceRect.Left + 8, faceRect.Top + 2, faceRect.Right - 8, faceRect.Top + 2);
                 e.Graphics.DrawLine(shine, faceRect.Left + 2, faceRect.Top + 8, faceRect.Left + 2, faceRect.Bottom - 7);
@@ -141,23 +141,23 @@ namespace CSVParserTool
                 button.Text,
                 button.Font,
                 textRect,
-                !button.Enabled ? UiTheme.TextMuted : state.Primary ? UiTheme.TextOnAccent : UiTheme.TextPrimary,
+                !button.Enabled ? UITheme.TextMuted : state.Primary ? UITheme.TextOnAccent : UITheme.TextPrimary,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
 
             if (button.Focused)
             {
                 Rectangle focus = Rectangle.Inflate(faceRect, -5, -5);
-                ControlPaint.DrawFocusRectangle(e.Graphics, focus, state.Primary ? UiTheme.TextOnAccent : UiTheme.TextPrimary, Color.Transparent);
+                ControlPaint.DrawFocusRectangle(e.Graphics, focus, state.Primary ? UITheme.TextOnAccent : UITheme.TextPrimary, Color.Transparent);
             }
         }
 
         private static void DrawPanel(Panel panel, PanelState state, PaintEventArgs e)
         {
-            if (UiTheme.CurrentTheme == AppTheme.Default || panel.Width < 16 || panel.Height < 18)
+            if (UITheme.CurrentTheme == AppTheme.Default || panel.Width < 16 || panel.Height < 18)
                 return;
 
-            int signature = ((int)UiTheme.CurrentTheme * 397)
-                ^ (UiTheme.IsDarkMode ? 1 : 0)
+            int signature = ((int)UITheme.CurrentTheme * 397)
+                ^ (UITheme.IsDarkMode ? 1 : 0)
                 ^ panel.BackColor.ToArgb()
                 ^ (state.Accent ? 7919 : 0);
             if (state.Cache == null || state.Cache.Size != panel.ClientSize || state.Signature != signature)
@@ -175,7 +175,7 @@ namespace CSVParserTool
         private static void RenderPanel(Panel panel, PanelState state, Graphics graphics)
         {
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            graphics.Clear(UiTheme.AppBackground);
+            graphics.Clear(UITheme.AppBackground);
 
             Rectangle farShadowRect = new Rectangle(5, 7, panel.Width - 8, panel.Height - 10);
             Rectangle nearShadowRect = new Rectangle(3, 5, panel.Width - 7, panel.Height - 9);
@@ -183,21 +183,21 @@ namespace CSVParserTool
             Rectangle faceRect = new Rectangle(1, 1, panel.Width - 8, panel.Height - 9);
 
             using (GraphicsPath farPath = RoundedRectangle(farShadowRect, 11))
-            using (var farShadow = new SolidBrush(Color.FromArgb(UiTheme.IsDarkMode ? 95 : 50, UiTheme.DepthShadow)))
+            using (var farShadow = new SolidBrush(Color.FromArgb(UITheme.IsDarkMode ? 95 : 50, UITheme.DepthShadow)))
                 graphics.FillPath(farShadow, farPath);
             using (GraphicsPath nearPath = RoundedRectangle(nearShadowRect, 11))
-            using (var nearShadow = new SolidBrush(Color.FromArgb(UiTheme.IsDarkMode ? 185 : 105, UiTheme.DepthShadow)))
+            using (var nearShadow = new SolidBrush(Color.FromArgb(UITheme.IsDarkMode ? 185 : 105, UITheme.DepthShadow)))
                 graphics.FillPath(nearShadow, nearPath);
             using (GraphicsPath sidePath = RoundedRectangle(sideRect, 10))
-            using (var sideBrush = new LinearGradientBrush(sideRect, UiTheme.BorderStrong, UiTheme.DepthShadow, 90F))
+            using (var sideBrush = new LinearGradientBrush(sideRect, UITheme.BorderStrong, UITheme.DepthShadow, 90F))
                 graphics.FillPath(sideBrush, sidePath);
 
             Color baseColor = panel.BackColor;
-            Color topColor = Blend(baseColor, Color.White, UiTheme.IsDarkMode ? 0.16F : 0.34F);
-            Color bottomColor = Blend(baseColor, Color.Black, UiTheme.IsDarkMode ? 0.13F : 0.10F);
+            Color topColor = Blend(baseColor, Color.White, UITheme.IsDarkMode ? 0.16F : 0.34F);
+            Color bottomColor = Blend(baseColor, Color.Black, UITheme.IsDarkMode ? 0.13F : 0.10F);
             using (GraphicsPath facePath = RoundedRectangle(faceRect, 10))
             using (var faceBrush = new LinearGradientBrush(faceRect, topColor, bottomColor, 90F))
-            using (var border = new Pen(Blend(UiTheme.BorderStrong, Color.Black, 0.10F), 1.4F))
+            using (var border = new Pen(Blend(UITheme.BorderStrong, Color.Black, 0.10F), 1.4F))
             {
                 graphics.FillPath(faceBrush, facePath);
                 graphics.DrawPath(border, facePath);
@@ -207,12 +207,12 @@ namespace CSVParserTool
             {
                 Rectangle accentStrip = new Rectangle(faceRect.Left + 10, faceRect.Top + 3, Math.Max(30, faceRect.Width - 20), 4);
                 using (GraphicsPath stripPath = RoundedRectangle(accentStrip, 2))
-                using (var strip = new LinearGradientBrush(accentStrip, Blend(UiTheme.Accent, Color.White, 0.34F), UiTheme.AccentPressed, 0F))
+                using (var strip = new LinearGradientBrush(accentStrip, Blend(UITheme.Accent, Color.White, 0.34F), UITheme.AccentPressed, 0F))
                     graphics.FillPath(strip, stripPath);
             }
 
-            using (var topHighlight = new Pen(Color.FromArgb(UiTheme.IsDarkMode ? 120 : 225, UiTheme.DepthHighlight), 1.5F))
-            using (var edgeShadow = new Pen(Color.FromArgb(UiTheme.IsDarkMode ? 170 : 105, UiTheme.DepthShadow), 1.4F))
+            using (var topHighlight = new Pen(Color.FromArgb(UITheme.IsDarkMode ? 120 : 225, UITheme.DepthHighlight), 1.5F))
+            using (var edgeShadow = new Pen(Color.FromArgb(UITheme.IsDarkMode ? 170 : 105, UITheme.DepthShadow), 1.4F))
             {
                 graphics.DrawLine(topHighlight, faceRect.Left + 11, faceRect.Top + 2, faceRect.Right - 11, faceRect.Top + 2);
                 graphics.DrawLine(topHighlight, faceRect.Left + 2, faceRect.Top + 10, faceRect.Left + 2, faceRect.Bottom - 9);
@@ -230,7 +230,7 @@ namespace CSVParserTool
         private static void UpdateButtonShape(Button button)
         {
             Region previous = button.Region;
-            if (UiTheme.CurrentTheme == AppTheme.Default || button.Width < 4 || button.Height < 4)
+            if (UITheme.CurrentTheme == AppTheme.Default || button.Width < 4 || button.Height < 4)
             {
                 button.Region = null;
                 previous?.Dispose();

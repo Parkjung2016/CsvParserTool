@@ -24,9 +24,9 @@ namespace CSVParserTool
             ShowInTaskbar = false;
             ClientSize = new Size(790, 520);
             Padding = new Padding(26, 22, 26, 22);
-            Font = UiTheme.FontUi;
-            BackColor = UiTheme.AppBackground;
-            ForeColor = UiTheme.TextPrimary;
+            Font = UITheme.FontUI;
+            BackColor = UITheme.AppBackground;
+            ForeColor = UITheme.TextPrimary;
             Opacity = AnimationsEnabled ? 0D : 1D;
 
             var root = new TableLayoutPanel
@@ -36,7 +36,7 @@ namespace CSVParserTool
                 RowCount = 4,
                 Margin = Padding.Empty,
                 Padding = Padding.Empty,
-                BackColor = UiTheme.AppBackground
+                BackColor = UITheme.AppBackground
             };
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -47,15 +47,15 @@ namespace CSVParserTool
             {
                 AutoSize = true,
                 Text = "작업 공간 테마",
-                Font = UiTheme.FontTitle,
-                ForeColor = UiTheme.TextPrimary,
+                Font = UITheme.FontTitle,
+                ForeColor = UITheme.TextPrimary,
                 Margin = new Padding(0, 0, 0, 5)
             };
             var subtitle = new Label
             {
                 AutoSize = true,
                 Text = "색상과 분위기를 선택하세요. 다크 모드는 선택한 테마에 맞춰 함께 적용됩니다.",
-                ForeColor = UiTheme.TextMuted,
+                ForeColor = UITheme.TextMuted,
                 Margin = new Padding(0, 0, 0, 20)
             };
 
@@ -66,7 +66,7 @@ namespace CSVParserTool
                 RowCount = 1,
                 Margin = Padding.Empty,
                 Padding = Padding.Empty,
-                BackColor = UiTheme.AppBackground
+                BackColor = UITheme.AppBackground
             };
             for (int i = 0; i < 3; i++)
                 cardLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333F));
@@ -109,8 +109,8 @@ namespace CSVParserTool
                 Padding = new Padding(16, 5, 16, 5),
                 Margin = new Padding(0, 0, 8, 0)
             };
-            UiTheme.StylePrimaryButton(applyButton);
-            UiTheme.StyleSecondaryButton(cancelButton);
+            UITheme.StylePrimaryButton(applyButton);
+            UITheme.StyleSecondaryButton(cancelButton);
             actions.Controls.Add(applyButton);
             actions.Controls.Add(cancelButton);
 
@@ -142,7 +142,7 @@ namespace CSVParserTool
                 card.Selected = card.Theme == theme;
         }
 
-        private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled && UiTheme.CurrentTheme == AppTheme.Default;
+        private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled && UITheme.CurrentTheme == AppTheme.Default;
 
         private void StartEntranceAnimation()
         {
@@ -194,7 +194,7 @@ namespace CSVParserTool
                 AccessibleRole = AccessibleRole.PushButton;
                 TabStop = true;
                 Dock = DockStyle.Fill;
-                BackColor = UiTheme.Surface;
+                BackColor = UITheme.Surface;
                 Cursor = Cursors.Hand;
                 Padding = new Padding(10);
                 artwork = ThemeArtwork.Load(theme);
@@ -205,7 +205,7 @@ namespace CSVParserTool
                     Height = 235,
                     Image = artwork,
                     SizeMode = PictureBoxSizeMode.Zoom,
-                    BackColor = theme == AppTheme.Default ? Color.FromArgb(24, 31, 48) : UiTheme.SurfaceMuted,
+                    BackColor = theme == AppTheme.Default ? Color.FromArgb(24, 31, 48) : UITheme.SurfaceMuted,
                     Cursor = Cursors.Hand
                 };
                 var titleLabel = new Label
@@ -213,8 +213,8 @@ namespace CSVParserTool
                     Dock = DockStyle.Top,
                     Height = 34,
                     Text = title,
-                    Font = UiTheme.FontUiMedium,
-                    ForeColor = UiTheme.TextPrimary,
+                    Font = UITheme.FontUIMedium,
+                    ForeColor = UITheme.TextPrimary,
                     TextAlign = ContentAlignment.BottomLeft,
                     Cursor = Cursors.Hand
                 };
@@ -222,7 +222,7 @@ namespace CSVParserTool
                 {
                     Dock = DockStyle.Fill,
                     Text = description,
-                    ForeColor = UiTheme.TextMuted,
+                    ForeColor = UITheme.TextMuted,
                     TextAlign = ContentAlignment.TopLeft,
                     Padding = new Padding(0, 5, 0, 0),
                     Cursor = Cursors.Hand
@@ -250,13 +250,13 @@ namespace CSVParserTool
             protected override void OnPaint(PaintEventArgs e)
             {
                 base.OnPaint(e);
-                Color border = selected ? UiTheme.Accent : hovered ? UiTheme.BorderStrong : UiTheme.Border;
+                Color border = selected ? UITheme.Accent : hovered ? UITheme.BorderStrong : UITheme.Border;
                 int width = selected ? 3 : 1;
                 using (var pen = new Pen(border, width))
                     e.Graphics.DrawRectangle(pen, width / 2, width / 2, Width - width, Height - width);
                 if (Theme != AppTheme.Default)
                 {
-                    using (var shadow = new Pen(UiTheme.DepthShadow, 3))
+                    using (var shadow = new Pen(UITheme.DepthShadow, 3))
                     {
                         e.Graphics.DrawLine(shadow, 5, Height - 3, Width - 3, Height - 3);
                         e.Graphics.DrawLine(shadow, Width - 3, 5, Width - 3, Height - 3);
@@ -275,7 +275,7 @@ namespace CSVParserTool
             private void SetHovered(bool value)
             {
                 hovered = value;
-                BackColor = value ? UiTheme.SurfaceMuted : UiTheme.Surface;
+                BackColor = value ? UITheme.SurfaceMuted : UITheme.Surface;
                 Invalidate();
             }
         }

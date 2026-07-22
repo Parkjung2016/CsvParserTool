@@ -36,8 +36,11 @@ namespace CSVParserTool
         private readonly Button Btn_EnumCatalog = new Button();
         private readonly Button Btn_CheckAll = new Button();
         private readonly Button Btn_UncheckAll = new Button();
+        private readonly Button Btn_CloseExportResults = new Button();
         private readonly SplitContainer splitExportAndLog = new SplitContainer();
+        private readonly TableLayoutPanel logHeaderLayout = new TableLayoutPanel();
         private bool exportResultSplitterInitialized;
+        private int exportResultViewportResetVersion;
 
         private readonly HashSet<string> checkedXlsxPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool allowCheckStateChange;
@@ -53,6 +56,7 @@ namespace CSVParserTool
         private string projectRootPath = "";
         private string excelSourceFolderPath = "";
         private string exportVersion = "1.0.0";
+        private string lastWarnedInvalidExportVersion = string.Empty;
 
         private string dataCsvDir =>
             string.IsNullOrWhiteSpace(projectRootPath)
@@ -85,9 +89,10 @@ namespace CSVParserTool
         private List<LogEntry> allLogs = new List<LogEntry>();
         private LogLevel? currentFilter = null;
         private bool splitContainersInitialized;
+        private Size lastSplitLayoutClientSize = Size.Empty;
         private bool startupDialogsScheduled;
-        private readonly Dictionary<string, ListViewItem> exportResultItems =
-            new Dictionary<string, ListViewItem>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, DataGridViewRow> exportResultItems =
+            new Dictionary<string, DataGridViewRow>(StringComparer.OrdinalIgnoreCase);
 
         private bool exportExcelPhaseRan;
         private bool exportHasTableFailure;
@@ -98,14 +103,16 @@ namespace CSVParserTool
         {
             InitializeComponent();
             InitializeExportLogSplitter();
+            InitializeExportResultControls();
+            InitializeLogHeaderLayout();
             InitializeInfoButton();
             exportLogFlushTimer.Tick += (_, __) => FlushPendingExportLogs();
 
             bool darkMode = ToolSettingsStore.DarkMode;
-            UiTheme.SetTheme(UiTheme.ParseTheme(ToolSettingsStore.ThemeName), darkMode);
+            UITheme.SetTheme(UITheme.ParseTheme(ToolSettingsStore.ThemeName), darkMode);
             Chk_DarkMode.Checked = darkMode;
 
-            ApplyUiTheme();
+            ApplyUITheme();
             ApplyAppIcon();
         }
 
@@ -120,7 +127,7 @@ namespace CSVParserTool
                 splitExportAndLog.FixedPanel = FixedPanel.Panel1;
                 splitExportAndLog.IsSplitterFixed = false;
                 splitExportAndLog.Panel1MinSize = 82;
-                splitExportAndLog.Panel2MinSize = 54;
+                splitExportAndLog.Panel2MinSize = 72;
                 splitExportAndLog.SplitterWidth = 6;
                 splitExportAndLog.TabStop = false;
 
@@ -139,11 +146,97 @@ namespace CSVParserTool
             }
         }
 
+        private void InitializeExportResultControls()
+        {
+            Btn_CloseExportResults.Name = "Btn_CloseExportResults";
+            Btn_CloseExportResults.Text = "결과 닫기";
+            Btn_CloseExportResults.AccessibleName = "Export 결과 닫기";
+            Btn_CloseExportResults.Cursor = Cursors.Hand;
+            Btn_CloseExportResults.TabStop = true;
+            Btn_CloseExportResults.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            Btn_CloseExportResults.Click += (_, __) => CloseExportResultsPanel();
+            Panel_ExportProgressTop.Controls.Add(Btn_CloseExportResults);
+            Btn_CloseExportResults.BringToFront();
+            Panel_ExportProgressTop.Resize += (_, __) => LayoutExportResultCloseButton();
+        }
+
+        private void LayoutExportResultCloseButton()
+        {
+            bool dimensional = UITheme.CurrentTheme != AppTheme.Default;
+            int buttonWidth = dimensional ? 98 : 88;
+            int buttonHeight = dimensional ? 38 : 30;
+            Btn_CloseExportResults.Size = new Size(buttonWidth, buttonHeight);
+            Btn_CloseExportResults.Location = new Point(
+                Math.Max(2, Panel_ExportProgressTop.ClientSize.Width - buttonWidth - 4),
+                2);
+            Panel_ExportProgressTop.Padding = new Padding(2, 0, 2, 4);
+            Label_ExportStatus.Padding = new Padding(0, 0, buttonWidth + 10, 4);
+            Btn_CloseExportResults.BringToFront();
+        }
+
+        private void CloseExportResultsPanel()
+        {
+            if (splitExportAndLog.Panel1Collapsed)
+                return;
+
+            splitExportAndLog.Panel1Collapsed = true;
+            Panel_ExportProgress.Visible = false;
+            exportResultSplitterInitialized = false;
+            UpdateOuterSplitMinimums();
+            LayoutSplitContainers(updateWorkWidth: false, updateLogHeight: true);
+        }
+
+        private void InitializeLogHeaderLayout()
+        {
+            Panel_LogHeader.SuspendLayout();
+            try
+            {
+                Panel_LogHeader.Controls.Clear();
+                logHeaderLayout.SuspendLayout();
+                logHeaderLayout.Name = "Table_LogHeader";
+                logHeaderLayout.Dock = DockStyle.Fill;
+                logHeaderLayout.BackColor = Color.Transparent;
+                logHeaderLayout.ColumnCount = 4;
+                logHeaderLayout.RowCount = 1;
+                logHeaderLayout.Margin = Padding.Empty;
+                logHeaderLayout.Padding = Padding.Empty;
+                logHeaderLayout.ColumnStyles.Clear();
+                logHeaderLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+                logHeaderLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132F));
+                logHeaderLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+                logHeaderLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+                logHeaderLayout.RowStyles.Clear();
+                logHeaderLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+                Label_SectionLog.Anchor = AnchorStyles.Left;
+                Label_SectionLog.Margin = new Padding(2, 0, 14, 0);
+                Combo_LogFilter.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+                Combo_LogFilter.Margin = Padding.Empty;
+                Btn_ClearLog.Anchor = AnchorStyles.Right;
+                Btn_ClearLog.Dock = DockStyle.None;
+                Btn_ClearLog.Margin = Padding.Empty;
+
+                logHeaderLayout.Controls.Add(Label_SectionLog, 0, 0);
+                logHeaderLayout.Controls.Add(Combo_LogFilter, 1, 0);
+                logHeaderLayout.Controls.Add(Btn_ClearLog, 3, 0);
+                Panel_LogHeader.Controls.Add(logHeaderLayout);
+                logHeaderLayout.ResumeLayout(true);
+
+                TextBox_Log.WordWrap = false;
+                TextBox_Log.ScrollBars = RichTextBoxScrollBars.Both;
+            }
+            finally
+            {
+                Panel_LogHeader.ResumeLayout(true);
+            }
+        }
+
         private void ShowExportResultsPanel()
         {
             Panel_ExportProgress.Visible = true;
             if (splitExportAndLog.Panel1Collapsed)
                 splitExportAndLog.Panel1Collapsed = false;
+            UpdateOuterSplitMinimums();
         }
 
         private void InitializeExportResultSplitterDistance()
@@ -159,7 +252,7 @@ namespace CSVParserTool
 
             splitExportAndLog.SplitterDistance = Math.Max(
                 splitExportAndLog.Panel1MinSize,
-                Math.Min(168, maximum));
+                Math.Min(250, maximum));
             exportResultSplitterInitialized = true;
         }
 
@@ -318,17 +411,17 @@ namespace CSVParserTool
         }
         private void Btn_Theme_Click(object sender, EventArgs e)
         {
-            using (var dialog = new ThemeSelectionForm(UiTheme.CurrentTheme))
+            using (var dialog = new ThemeSelectionForm(UITheme.CurrentTheme))
             {
                 if (Icon != null)
                     dialog.Icon = (Icon)Icon.Clone();
                 if (ModalBlurBackdrop.ShowDialog(this, dialog) != DialogResult.OK)
                     return;
 
-                UiTheme.SetTheme(dialog.SelectedTheme, Chk_DarkMode.Checked);
+                UITheme.SetTheme(dialog.SelectedTheme, Chk_DarkMode.Checked);
                 ToolSettingsStore.ThemeName = dialog.SelectedTheme.ToString();
                 ToolSettingsStore.Save();
-                ApplyUiTheme();
+                ApplyUITheme();
             }
         }
         private void Btn_Info_Click(object sender, EventArgs e)
@@ -416,24 +509,24 @@ namespace CSVParserTool
         private void Chk_DarkMode_CheckedChanged(object sender, EventArgs e)
         {
             bool darkMode = Chk_DarkMode.Checked;
-            UiTheme.SetTheme(UiTheme.ParseTheme(ToolSettingsStore.ThemeName), darkMode);
+            UITheme.SetTheme(UITheme.ParseTheme(ToolSettingsStore.ThemeName), darkMode);
             ToolSettingsStore.DarkMode = darkMode;
             ToolSettingsStore.Save();
 
-            ApplyUiTheme();
+            ApplyUITheme();
         }
 
         private void SetPreviewCode(string code)
         {
             currentPreviewCode = code ?? string.Empty;
-            CSharpPreviewHighlighter.Apply(TextBox_Preview, currentPreviewCode, UiTheme.IsDarkMode);
+            CSharpPreviewHighlighter.Apply(TextBox_Preview, currentPreviewCode, UITheme.IsDarkMode);
         }
 
-        private void ApplyUiTheme()
+        private void ApplyUITheme()
         {
             if (!IsHandleCreated)
             {
-                ApplyUiThemeCore();
+                ApplyUIThemeCore();
                 return;
             }
 
@@ -441,7 +534,7 @@ namespace CSVParserTool
             SendMessage(Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
             try
             {
-                ApplyUiThemeCore();
+                ApplyUIThemeCore();
                 SetPreviewCode(currentPreviewCode);
                 RefreshLogDisplay();
                 StyleExportResultRows();
@@ -471,23 +564,23 @@ namespace CSVParserTool
                 StyleExportResultRows();
             }));
         }
-        private void ApplyUiThemeCore()
+        private void ApplyUIThemeCore()
         {
-            BackColor = UiTheme.AppBackground;
-            Font = UiTheme.FontUi;
-            ForeColor = UiTheme.TextPrimary;
+            BackColor = UITheme.AppBackground;
+            Font = UITheme.FontUI;
+            ForeColor = UITheme.TextPrimary;
             Text = "PJDev Data Tool";
 
-            UiTheme.StyleChromePanel(Panel_Header, accent: true);
-            UiTheme.StyleChromePanel(Panel_Top);
-            UiTheme.StyleChromePanel(Panel_Bottom);
+            UITheme.StyleChromePanel(Panel_Header, accent: true);
+            UITheme.StyleChromePanel(Panel_Top);
+            UITheme.StyleChromePanel(Panel_Bottom);
 
-            Label_AppTitle.Font = UiTheme.FontTitle;
-            Label_AppTitle.ForeColor = UiTheme.Accent;
-            Label_AppSubtitle.Font = UiTheme.FontSubtitle;
-            Label_AppSubtitle.ForeColor = UiTheme.TextMuted;
+            Label_AppTitle.Font = UITheme.FontTitle;
+            Label_AppTitle.ForeColor = UITheme.Accent;
+            Label_AppSubtitle.Font = UITheme.FontSubtitle;
+            Label_AppSubtitle.ForeColor = UITheme.TextMuted;
 
-            UiTheme.StyleCheckBox(Chk_DarkMode);
+            UITheme.StyleCheckBox(Chk_DarkMode);
             Chk_DarkMode.BackColor = Color.Transparent;
 
             PictureBox_HeaderIcon.BackColor = Color.Transparent;
@@ -496,84 +589,86 @@ namespace CSVParserTool
             tableBottom.BackColor = Color.Transparent;
             ApplyThemeHeaderIcon();
 
-            UiTheme.StyleSectionLabel(Label_SectionList);
-            UiTheme.StyleSectionLabel(Label_SectionPreview);
-            Panel_ListHeader.BackColor = UiTheme.AppBackground;
-            Label_SectionLog.Font = UiTheme.FontSection;
-            Label_SectionLog.ForeColor = UiTheme.LogInfo;
+            UITheme.StyleSectionLabel(Label_SectionList);
+            UITheme.StyleSectionLabel(Label_SectionPreview);
+            Panel_ListHeader.BackColor = UITheme.AppBackground;
+            Label_SectionLog.Font = UITheme.FontSection;
+            Label_SectionLog.ForeColor = UITheme.LogInfo;
             Label_SectionLog.AutoSize = true;
-            UiTheme.StyleCaptionLabel(Label_CsvFilter);
+            UITheme.StyleCaptionLabel(Label_CsvFilter);
 
-            UiTheme.StyleSurfacePanel(Panel_ListCard);
-            UiTheme.StylePreviewPanel(Panel_PreviewCard);
-            UiTheme.StyleLogPanel(Panel_LogCard);
-            Panel_LogHeader.BackColor = UiTheme.LogHeaderBackground;
+            UITheme.StyleSurfacePanel(Panel_ListCard);
+            UITheme.StylePreviewPanel(Panel_PreviewCard);
+            UITheme.StyleLogPanel(Panel_LogCard);
+            Panel_LogHeader.BackColor = UITheme.LogHeaderBackground;
 
-            UiTheme.StylePrimaryButton(Btn_DataSetting, tall: true);
-            UiTheme.StyleSecondaryButton(Btn_ExportSelected);
-            UiTheme.StyleSecondaryButton(Btn_EnumCatalog);
-            UiTheme.StyleSecondaryButton(Btn_Info);
-            UiTheme.StyleSecondaryButton(Btn_Version);
-            UiTheme.StyleSecondaryButton(Btn_Theme);
+            UITheme.StylePrimaryButton(Btn_DataSetting, tall: true);
+            UITheme.StyleSecondaryButton(Btn_ExportSelected);
+            UITheme.StyleSecondaryButton(Btn_EnumCatalog);
+            UITheme.StyleSecondaryButton(Btn_Info);
+            UITheme.StyleSecondaryButton(Btn_Version);
+            UITheme.StyleSecondaryButton(Btn_Theme);
             Btn_Info.Font = new Font("Segoe UI Semibold", 11F, FontStyle.Regular, GraphicsUnit.Point);
             Btn_Info.Padding = Padding.Empty;
-            Btn_Info.MinimumSize = UiTheme.CurrentTheme == AppTheme.Default ? new Size(34, 34) : new Size(40, 40);
-            UiTheme.StyleSecondaryButton(Btn_CheckAll);
-            UiTheme.StyleSecondaryButton(Btn_UncheckAll);
-            Btn_Info.Size = UiTheme.CurrentTheme == AppTheme.Default ? new Size(34, 34) : new Size(40, 40);
-            UiTheme.StyleSecondaryButton(Btn_SelectProjectRoot);
-            UiTheme.StyleSecondaryButton(Btn_SelectExcelFolder);
-            UiTheme.StyleSecondaryButton(Btn_OpenOutputFolder);
-            UiTheme.StyleSecondaryButton(Btn_OpenCsvFolder);
-            UiTheme.StyleSecondaryButton(Btn_OpenXlsxFolder);
-            UiTheme.StyleSecondaryButton(Btn_NewCsv);
-            UiTheme.StyleSecondaryButton(Btn_RefreshList);
-            UiTheme.StyleSecondaryButton(Btn_ClearLog);
+            Btn_Info.MinimumSize = UITheme.CurrentTheme == AppTheme.Default ? new Size(34, 34) : new Size(40, 40);
+            UITheme.StyleSecondaryButton(Btn_CheckAll);
+            UITheme.StyleSecondaryButton(Btn_UncheckAll);
+            Btn_Info.Size = UITheme.CurrentTheme == AppTheme.Default ? new Size(34, 34) : new Size(40, 40);
+            UITheme.StyleSecondaryButton(Btn_SelectProjectRoot);
+            UITheme.StyleSecondaryButton(Btn_SelectExcelFolder);
+            UITheme.StyleSecondaryButton(Btn_OpenOutputFolder);
+            UITheme.StyleSecondaryButton(Btn_OpenCsvFolder);
+            UITheme.StyleSecondaryButton(Btn_OpenXlsxFolder);
+            UITheme.StyleSecondaryButton(Btn_NewCsv);
+            UITheme.StyleSecondaryButton(Btn_RefreshList);
+            UITheme.StyleSecondaryButton(Btn_ClearLog);
+            UITheme.StyleSecondaryButton(Btn_CloseExportResults);
+            Btn_CloseExportResults.Font = UITheme.FontUIMedium;
+            Btn_CloseExportResults.Padding = Padding.Empty;
 
-            UiTheme.StylePathLabel(Label_ProjectRoot);
-            UiTheme.StylePathLabel(Label_ExcelSourcePath);
-            UiTheme.StyleTextField(Txt_CsvFilter);
-            UiTheme.StyleTextField(TextBox_NewCsvName);
-            UiTheme.StyleTextField(Txt_ExportVersion);
-            UiTheme.StyleCheckBox(Chk_RemoveOrphanArtifacts);
-            UiTheme.StyleCombo(Combo_LogFilter);
-            UiTheme.StyleList(ListBox_CsvFiles);
-            UiTheme.StylePreviewBox(TextBox_Preview);
-            UiTheme.StyleLogBox(TextBox_Log);
-            UiTheme.StyleExportListView(ListView_ExportResults);
-            UiTheme.StyleSectionLabel(Label_SectionExport);
-            Panel_ExportProgress.BackColor = UiTheme.SurfaceMuted;
-            Panel_ExportProgressTop.BackColor = UiTheme.SurfaceMuted;
-            SegmentedExportProgress_Export.BackColor = UiTheme.SurfaceMuted;
-            Label_ExportStatus.Font = UiTheme.FontUiMedium;
-            Label_ExportStatus.ForeColor = UiTheme.TextPrimary;
-            Label_ExportStatus.BackColor = UiTheme.SurfaceMuted;
+            UITheme.StylePathLabel(Label_ProjectRoot);
+            UITheme.StylePathLabel(Label_ExcelSourcePath);
+            UITheme.StyleTextField(Txt_CsvFilter);
+            UITheme.StyleTextField(TextBox_NewCsvName);
+            UITheme.StyleTextField(Txt_ExportVersion);
+            UITheme.StyleCheckBox(Chk_RemoveOrphanArtifacts);
+            UITheme.StyleCombo(Combo_LogFilter);
+            UITheme.StyleList(ListBox_CsvFiles);
+            UITheme.StylePreviewBox(TextBox_Preview);
+            UITheme.StyleLogBox(TextBox_Log);
+            UITheme.StyleExportGrid(Grid_ExportResults);
+            UITheme.StyleSectionLabel(Label_SectionExport);
+            Panel_ExportProgress.BackColor = UITheme.SurfaceMuted;
+            Panel_ExportProgressTop.BackColor = UITheme.SurfaceMuted;
+            SegmentedExportProgress_Export.BackColor = UITheme.SurfaceMuted;
+            Label_ExportStatus.Font = UITheme.FontUIMedium;
+            Label_ExportStatus.ForeColor = UITheme.TextPrimary;
+            Label_ExportStatus.BackColor = UITheme.SurfaceMuted;
             SegmentedExportProgress_Export.Invalidate();
             exportMiniGameForm?.ApplyTheme();
 
-            splitOuter.BackColor = UiTheme.Border;
-            splitOuter.Panel1.BackColor = UiTheme.AppBackground;
-            splitOuter.Panel2.BackColor = UiTheme.AppBackground;
-            splitWork.BackColor = UiTheme.Border;
-            splitWork.Panel1.BackColor = UiTheme.AppBackground;
-            splitWork.Panel2.BackColor = UiTheme.AppBackground;
-            splitExportAndLog.BackColor = UiTheme.Border;
-            splitExportAndLog.Panel1.BackColor = UiTheme.AppBackground;
-            splitExportAndLog.Panel2.BackColor = UiTheme.AppBackground;
-            Panel_LogSection.BackColor = UiTheme.AppBackground;
-            Panel_MainContent.BackColor = UiTheme.AppBackground;
+            splitOuter.BackColor = UITheme.Border;
+            splitOuter.Panel1.BackColor = UITheme.AppBackground;
+            splitOuter.Panel2.BackColor = UITheme.AppBackground;
+            splitWork.BackColor = UITheme.Border;
+            splitWork.Panel1.BackColor = UITheme.AppBackground;
+            splitWork.Panel2.BackColor = UITheme.AppBackground;
+            splitExportAndLog.BackColor = UITheme.Border;
+            splitExportAndLog.Panel1.BackColor = UITheme.AppBackground;
+            splitExportAndLog.Panel2.BackColor = UITheme.AppBackground;
+            Panel_LogSection.BackColor = UITheme.AppBackground;
+            Panel_MainContent.BackColor = UITheme.AppBackground;
             ApplyDimensionalLayout();
         }
 
         private void ApplyDimensionalLayout()
         {
-            bool dimensional = UiTheme.CurrentTheme != AppTheme.Default;
+            bool dimensional = UITheme.CurrentTheme != AppTheme.Default;
             MinimumSize = dimensional ? new Size(1000, 700) : new Size(920, 580);
             Panel_Header.MinimumSize = dimensional ? new Size(0, 84) : Size.Empty;
             Panel_Top.MinimumSize = new Size(0, dimensional ? 188 : 166);
             Panel_Bottom.MinimumSize = dimensional ? new Size(0, 70) : Size.Empty;
-            splitOuter.Panel1MinSize = dimensional ? 150 : 180;
-            splitOuter.Panel2MinSize = dimensional ? 140 : 180;
+            UpdateOuterSplitMinimums();
             splitWork.Panel1MinSize = dimensional ? 220 : 200;
             splitWork.Panel2MinSize = dimensional ? 300 : 280;
             Panel_MainContent.Padding = dimensional
@@ -586,18 +681,30 @@ namespace CSVParserTool
             splitWork.Panel2.Padding = dimensional ? new Padding(10, 0, 0, 0) : new Padding(8, 0, 0, 0);
             Panel_ListHeader.Height = dimensional ? 88 : 80;
             Panel_LogHeader.Height = dimensional ? 38 : 32;
+            Panel_ExportProgressTop.Height = dimensional ? 96 : 88;
             Label_SectionPreview.Height = dimensional ? 32 : 28;
+            LayoutExportResultCloseButton();
         }
+        private void UpdateOuterSplitMinimums()
+        {
+            bool dimensional = UITheme.CurrentTheme != AppTheme.Default;
+            bool exportResultsVisible = Panel_ExportProgress.Visible && !splitExportAndLog.Panel1Collapsed;
+            splitOuter.Panel1MinSize = exportResultsVisible
+                ? (dimensional ? 90 : 100)
+                : (dimensional ? 150 : 180);
+            splitOuter.Panel2MinSize = dimensional ? 140 : 180;
+        }
+
         private void StartExportCompletionAnimation(bool success)
         {
             StopExportCompletionAnimation(resetColors: true);
-            if (!SystemInformation.IsMenuAnimationEnabled || UiTheme.CurrentTheme != AppTheme.Default)
+            if (!SystemInformation.IsMenuAnimationEnabled || UITheme.CurrentTheme != AppTheme.Default)
                 return;
 
             exportCompletionAnimationFrame = 0;
             exportCompletionAnimationStartColor = BlendColor(
-                UiTheme.SurfaceMuted,
-                success ? UiTheme.LogSuccess : UiTheme.LogError,
+                UITheme.SurfaceMuted,
+                success ? UITheme.LogSuccess : UITheme.LogError,
                 0.42D);
             ApplyExportCompletionAnimationColor(exportCompletionAnimationStartColor);
             if (exportCompletionAnimationTimer == null)
@@ -615,7 +722,7 @@ namespace CSVParserTool
             double eased = 1D - Math.Pow(1D - progress, 3D);
             ApplyExportCompletionAnimationColor(BlendColor(
                 exportCompletionAnimationStartColor,
-                UiTheme.SurfaceMuted,
+                UITheme.SurfaceMuted,
                 eased));
             if (progress >= 1D)
                 StopExportCompletionAnimation(resetColors: true);
@@ -625,7 +732,7 @@ namespace CSVParserTool
         {
             exportCompletionAnimationTimer?.Stop();
             if (resetColors)
-                ApplyExportCompletionAnimationColor(UiTheme.SurfaceMuted);
+                ApplyExportCompletionAnimationColor(UITheme.SurfaceMuted);
         }
 
         private void ApplyExportCompletionAnimationColor(Color color)
@@ -906,6 +1013,9 @@ namespace CSVParserTool
             if (IsDisposed || Disposing)
                 return;
 
+            if (!ToolRuntimeEnvironment.UpdatesAllowed)
+                return;
+
             try
             {
                 ToolUpdateInfo update = await ToolUpdateService.CheckAsync(CancellationToken.None);
@@ -938,23 +1048,23 @@ namespace CSVParserTool
         }
 
         /// <summary>사이드바·미리보기·하단 로그 패널 초기 비율.</summary>
-        private void LayoutSplitContainers()
+        private void LayoutSplitContainers(bool updateWorkWidth = true, bool updateLogHeight = true)
         {
             if (!IsHandleCreated || splitOuter.Width <= 0 || splitWork.Width <= 0)
                 return;
 
             int maxList = splitWork.Width - splitWork.Panel2MinSize - splitWork.SplitterWidth;
-            if (maxList >= splitWork.Panel1MinSize)
+            if (updateWorkWidth && maxList >= splitWork.Panel1MinSize)
             {
                 int desiredList = Math.Max(260, Math.Min(360, (int)(splitWork.Width * 0.30F)));
                 splitWork.SplitterDistance = Math.Min(maxList, Math.Max(splitWork.Panel1MinSize, desiredList));
             }
 
             int maxWork = splitOuter.Height - splitOuter.Panel2MinSize - splitOuter.SplitterWidth;
-            if (maxWork >= splitOuter.Panel1MinSize)
+            if (updateLogHeight && maxWork >= splitOuter.Panel1MinSize)
             {
                 int desiredLog = Panel_ExportProgress.Visible
-                    ? Math.Max(220, Math.Min(320, (int)(splitOuter.Height * 0.42F)))
+                    ? Math.Max(340, Math.Min(520, (int)(splitOuter.Height * 0.68F)))
                     : Math.Max(180, Math.Min(240, (int)(splitOuter.Height * 0.30F)));
                 int desiredWork = splitOuter.Height - splitOuter.SplitterWidth - desiredLog;
                 splitOuter.SplitterDistance = Math.Min(maxWork, Math.Max(splitOuter.Panel1MinSize, desiredWork));
@@ -967,7 +1077,12 @@ namespace CSVParserTool
             if (!IsHandleCreated || WindowState == FormWindowState.Minimized)
                 return;
 
-            LayoutSplitContainers();
+            Size currentSize = ClientSize;
+            bool firstLayout = lastSplitLayoutClientSize.IsEmpty;
+            bool widthChanged = firstLayout || currentSize.Width != lastSplitLayoutClientSize.Width;
+            bool heightChanged = firstLayout || currentSize.Height != lastSplitLayoutClientSize.Height;
+            LayoutSplitContainers(updateWorkWidth: widthChanged, updateLogHeight: heightChanged);
+            lastSplitLayoutClientSize = currentSize;
         }
         private void Form1_Load(object sender, EventArgs e)
         {
@@ -975,8 +1090,8 @@ namespace CSVParserTool
             excelSourceFolderPath = ToolSettingsStore.ExcelSourceFolderPath ?? "";
             exportVersion = NormalizeExportVersion(ToolSettingsStore.ExportVersion);
 
-            UiTheme.UpdatePathLabel(Label_ProjectRoot, projectRootPath);
-            UiTheme.UpdatePathLabel(Label_ExcelSourcePath, excelSourceFolderPath);
+            UITheme.UpdatePathLabel(Label_ProjectRoot, projectRootPath);
+            UITheme.UpdatePathLabel(Label_ExcelSourcePath, excelSourceFolderPath);
             Txt_ExportVersion.Text = exportVersion;
             Chk_RemoveOrphanArtifacts.Checked = ToolSettingsStore.RemoveOrphanArtifactsOnExport;
 
@@ -1034,6 +1149,9 @@ namespace CSVParserTool
                 return;
             }
 
+            if (!TrySaveExportVersionSetting(showWarning: true))
+                return;
+
             if (!CheckDataSettingAvailable(out string reason, willRefreshExcelToCsvFirst: refresh))
             {
                 AddLog("데이터 설정 조건이 맞지 않습니다.", LogLevel.Error, suppressErrorDialog: true);
@@ -1053,10 +1171,9 @@ namespace CSVParserTool
             Btn_ExportSelected.Enabled = false;
             try
             {
-                SaveExportVersionSetting();
-                BeginExportProgressUi();
+                BeginExportProgressUI();
                 string targetText = selectedOnly ? $"선택 {selectedTableStems.Count}개" : "전체";
-                AddLog($"데이터 Export 시작… ({targetText}, 버전 {exportVersion}, 원본 없는 이전 파일 삭제 {(Chk_RemoveOrphanArtifacts.Checked ? "ON" : "OFF")})", LogLevel.Info);
+                AddLog($"데이터 Export 시작… ({targetText}, 버전 {exportVersion}, 원본 없는 산출물 정리 {(Chk_RemoveOrphanArtifacts.Checked ? "ON" : "OFF")})", LogLevel.Info);
 
                 // UI values must be captured before the worker starts. Reading WinForms
                 // controls from the export thread is unsafe and can also stall rendering.
@@ -1081,7 +1198,7 @@ namespace CSVParserTool
                 DataExportResult result = await exportTask;
                 FlushPendingExportLogs();
 
-                FinishExportProgressUi(result);
+                FinishExportProgressUI(result);
 
                 if (result.Ok)
                 {
@@ -1097,7 +1214,7 @@ namespace CSVParserTool
             catch (Exception ex)
             {
                 FlushPendingExportLogs();
-                FinishExportProgressUi(null);
+                FinishExportProgressUI(null);
                 AddLog(ex.Message, LogLevel.Error);
             }
             finally
@@ -1185,29 +1302,28 @@ namespace CSVParserTool
                 return;
             exportMiniGameForm.CompleteExport(success, message);
         }
-        private void BeginExportProgressUi()
+        private void BeginExportProgressUI()
         {
             ClearExportTaskbarNotification();
             StopExportCompletionAnimation(resetColors: true);
             exportResultItems.Clear();
-            ListView_ExportResults.Items.Clear();
+            Grid_ExportResults.Rows.Clear();
             ShowExportResultsPanel();
             exportExcelPhaseRan = false;
             exportHasTableFailure = false;
             exportActivePhaseIndex = -1;
-            Label_ExportStatus.ForeColor = UiTheme.StatusRunning;
+            Label_ExportStatus.ForeColor = UITheme.StatusRunning;
             Label_ExportStatus.Text = "Export 준비 중…";
             ResetExportSteps();
             LayoutSplitContainers();
             InitializeExportResultSplitterDistance();
-            AdjustExportResultColumns();
         }
 
-        private void FinishExportProgressUi(DataExportResult result)
+        private void FinishExportProgressUI(DataExportResult result)
         {
             if (result == null)
             {
-                Label_ExportStatus.ForeColor = UiTheme.LogError;
+                Label_ExportStatus.ForeColor = UITheme.LogError;
                 Label_ExportStatus.Text = "Export 중단";
                 if (exportActivePhaseIndex >= 0)
                     SetExportStep(exportActivePhaseIndex, SegmentedPhaseState.Failed);
@@ -1240,13 +1356,13 @@ namespace CSVParserTool
 
             if (result.FailedCount > 0)
             {
-                Label_ExportStatus.ForeColor = UiTheme.LogError;
+                Label_ExportStatus.ForeColor = UITheme.LogError;
                 Label_ExportStatus.Text =
                     $"Export 실패 — 성공 {result.SucceededCount} · 실패 {result.FailedCount} (아래 목록 확인)";
             }
             else if (result.Ok)
             {
-                Label_ExportStatus.ForeColor = UiTheme.LogSuccess;
+                Label_ExportStatus.ForeColor = UITheme.LogSuccess;
                 Label_ExportStatus.Text =
                     total > 0
                         ? $"Export 완료 — {result.SucceededCount}/{total} 테이블"
@@ -1254,7 +1370,7 @@ namespace CSVParserTool
             }
             else
             {
-                Label_ExportStatus.ForeColor = UiTheme.LogError;
+                Label_ExportStatus.ForeColor = UITheme.LogError;
                 Label_ExportStatus.Text = result.ErrorMessage ?? "Export 실패";
             }
 
@@ -1262,7 +1378,6 @@ namespace CSVParserTool
             SelectFirstFailedExportRowInternal(result);
             if (result.FailedCount > 0)
                 Combo_LogFilter.SelectedItem = "Error";
-            LayoutSplitContainers();
             bool exportSucceeded = result.Ok && result.FailedCount == 0;
             StartExportCompletionAnimation(exportSucceeded);
             ShowExportTaskbarNotification(exportSucceeded);
@@ -1289,7 +1404,7 @@ namespace CSVParserTool
             switch (info.Kind)
             {
                 case DataExportProgressKind.PhaseChanged:
-                    Label_ExportStatus.ForeColor = UiTheme.StatusRunning;
+                    Label_ExportStatus.ForeColor = UITheme.StatusRunning;
                     Label_ExportStatus.Text = info.PhaseLabel ?? "Export 진행 중…";
                     if (info.PhaseIndex == 0)
                     {
@@ -1314,7 +1429,7 @@ namespace CSVParserTool
                     exportActivePhaseIndex = 1;
                     SetExportStep(1, SegmentedPhaseState.Running);
                     SegmentedExportProgress_Export.SetTableProgress(0, Math.Max(1, info.TotalCount));
-                    Label_ExportStatus.ForeColor = UiTheme.StatusRunning;
+                    Label_ExportStatus.ForeColor = UITheme.StatusRunning;
                     Label_ExportStatus.Text = $"테이블 Export 0/{info.TotalCount}";
                     InitializeExportResultRows(info.PendingItemNames);
                     break;
@@ -1353,7 +1468,7 @@ namespace CSVParserTool
                         SetExportStep(2, info.Success ? SegmentedPhaseState.Done : SegmentedPhaseState.Failed);
                     }
 
-                    Label_ExportStatus.ForeColor = info.Success ? UiTheme.LogSuccess : UiTheme.LogError;
+                    Label_ExportStatus.ForeColor = info.Success ? UITheme.LogSuccess : UITheme.LogError;
                     Label_ExportStatus.Text = info.PhaseLabel ?? (info.Success ? "Export 완료" : "Export 실패");
                     break;
             }
@@ -1369,44 +1484,69 @@ namespace CSVParserTool
             SegmentedExportProgress_Export.SetPhaseState(stepIndex, state, caption);
         }
 
-        private void ListView_ExportResults_Resize(object sender, EventArgs e)
+        private void Grid_ExportResults_SizeChanged(object sender, EventArgs e)
         {
-            AdjustExportResultColumns();
-        }
-
-        private void AdjustExportResultColumns()
-        {
-            if (ListView_ExportResults.Columns.Count < 3)
+            int version = ++exportResultViewportResetVersion;
+            if (!IsHandleCreated || IsDisposed || Disposing)
                 return;
 
-            int fixedWidth = ListView_ExportResults.Columns[0].Width + ListView_ExportResults.Columns[1].Width + 8;
-            int messageWidth = ListView_ExportResults.ClientSize.Width - fixedWidth;
-            ListView_ExportResults.Columns[2].Width = Math.Max(120, messageWidth);
+            BeginInvoke(new Action(() =>
+            {
+                if (version != exportResultViewportResetVersion
+                    || IsDisposed
+                    || Disposing
+                    || !Grid_ExportResults.IsHandleCreated)
+                {
+                    return;
+                }
+
+                if (Grid_ExportResults.Rows.Count > 0
+                    && Grid_ExportResults.ClientSize.Height > Grid_ExportResults.ColumnHeadersHeight)
+                {
+                    try
+                    {
+                        Grid_ExportResults.FirstDisplayedScrollingRowIndex = 0;
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // 레이아웃 중 표시 가능한 행이 아직 없으면 다음 Resize에서 다시 맞춘다.
+                    }
+                }
+
+                Grid_ExportResults.Invalidate(true);
+            }));
         }
+
 
         private void InitializeExportResultRows(IReadOnlyList<string> itemNames)
         {
-            ListView_ExportResults.BeginUpdate();
-            ListView_ExportResults.Items.Clear();
-            exportResultItems.Clear();
-
-            if (itemNames != null)
+            Grid_ExportResults.SuspendLayout();
+            try
             {
+                Grid_ExportResults.Rows.Clear();
+                exportResultItems.Clear();
+
+                if (itemNames == null)
+                    return;
+
                 foreach (string name in itemNames)
                 {
                     if (string.IsNullOrWhiteSpace(name))
                         continue;
 
-                    var item = new ListViewItem(name);
-                    item.SubItems.Add("대기");
-                    item.SubItems.Add(string.Empty);
-                    item.ForeColor = UiTheme.StatusPending;
-                    ListView_ExportResults.Items.Add(item);
-                    exportResultItems[name] = item;
+                    int index = Grid_ExportResults.Rows.Add(name, "대기", string.Empty);
+                    DataGridViewRow row = Grid_ExportResults.Rows[index];
+                    row.DefaultCellStyle.ForeColor = UITheme.StatusPending;
+                    exportResultItems[name] = row;
                 }
             }
-
-            ListView_ExportResults.EndUpdate();
+            finally
+            {
+                Grid_ExportResults.ResumeLayout(true);
+                Grid_ExportResults.ClearSelection();
+                Grid_ExportResults.CurrentCell = null;
+                Grid_ExportResults.Invalidate(true);
+            }
         }
 
         private void UpdateExportResultRow(string itemName, bool success, string message)
@@ -1414,42 +1554,39 @@ namespace CSVParserTool
             if (string.IsNullOrWhiteSpace(itemName))
                 return;
 
-            if (!exportResultItems.TryGetValue(itemName, out ListViewItem item))
+            if (!exportResultItems.TryGetValue(itemName, out DataGridViewRow row))
             {
-                item = new ListViewItem(itemName);
-                item.SubItems.Add(success ? "성공" : "실패");
-                item.SubItems.Add(message ?? string.Empty);
-                item.ForeColor = success ? UiTheme.LogSuccess : UiTheme.LogError;
-                ListView_ExportResults.Items.Add(item);
-                exportResultItems[itemName] = item;
-                return;
+                int index = Grid_ExportResults.Rows.Add(
+                    itemName,
+                    success ? "성공" : "실패",
+                    message ?? string.Empty);
+                row = Grid_ExportResults.Rows[index];
+                exportResultItems[itemName] = row;
+            }
+            else
+            {
+                row.Cells[1].Value = success ? "성공" : "실패";
+                row.Cells[2].Value = message ?? string.Empty;
             }
 
-            if (item.SubItems.Count < 2)
-                item.SubItems.Add(success ? "성공" : "실패");
-            else
-                item.SubItems[1].Text = success ? "성공" : "실패";
-
-            if (item.SubItems.Count < 3)
-                item.SubItems.Add(message ?? string.Empty);
-            else
-                item.SubItems[2].Text = message ?? string.Empty;
-
-            item.ForeColor = success ? UiTheme.LogSuccess : UiTheme.LogError;
+            row.DefaultCellStyle.ForeColor = success ? UITheme.LogSuccess : UITheme.LogError;
+            Grid_ExportResults.InvalidateRow(row.Index);
         }
 
         private void StyleExportResultRows()
         {
-            foreach (ListViewItem item in ListView_ExportResults.Items)
+            foreach (DataGridViewRow row in Grid_ExportResults.Rows)
             {
-                string status = item.SubItems.Count > 1 ? item.SubItems[1].Text : string.Empty;
+                string status = Convert.ToString(row.Cells[1].Value);
                 if (status == "성공")
-                    item.ForeColor = UiTheme.LogSuccess;
+                    row.DefaultCellStyle.ForeColor = UITheme.LogSuccess;
                 else if (status == "실패")
-                    item.ForeColor = UiTheme.LogError;
+                    row.DefaultCellStyle.ForeColor = UITheme.LogError;
                 else
-                    item.ForeColor = UiTheme.StatusPending;
+                    row.DefaultCellStyle.ForeColor = UITheme.StatusPending;
             }
+
+            Grid_ExportResults.Invalidate(true);
         }
 
         private void SelectFirstFailedExportRowInternal(DataExportResult result)
@@ -1457,19 +1594,22 @@ namespace CSVParserTool
             if (result?.TableResults == null)
                 return;
 
-            foreach (DataExportTableResult row in result.TableResults)
+            Grid_ExportResults.ClearSelection();
+            foreach (DataExportTableResult resultRow in result.TableResults)
             {
-                if (row.Success)
+                if (resultRow.Success)
                     continue;
 
-                if (exportResultItems.TryGetValue(row.SourceFileName, out ListViewItem item))
+                if (exportResultItems.TryGetValue(resultRow.SourceFileName, out DataGridViewRow gridRow))
                 {
-                    item.Selected = true;
-                    item.EnsureVisible();
+                    gridRow.Selected = true;
+                    Grid_ExportResults.CurrentCell = gridRow.Cells[0];
+                    Grid_ExportResults.FirstDisplayedScrollingRowIndex = gridRow.Index;
                     break;
                 }
             }
         }
+
 
         private static string BuildFailureSummaryText(DataExportResult result)
         {
@@ -2067,7 +2207,7 @@ namespace CSVParserTool
             CancellationToken token = cancellation.Token;
             currentPreviewCode = string.Empty;
             TextBox_Preview.Text = "Preview 준비 중…";
-            TextBox_Preview.ForeColor = UiTheme.TextMuted;
+            TextBox_Preview.ForeColor = UITheme.TextMuted;
 
             bool lockEntered = false;
             try
@@ -2162,7 +2302,7 @@ namespace CSVParserTool
                     ToolSettingsStore.ProjectRootPath = projectRootPath;
                     ToolSettingsStore.Save();
 
-                    UiTheme.UpdatePathLabel(Label_ProjectRoot, projectRootPath);
+                    UITheme.UpdatePathLabel(Label_ProjectRoot, projectRootPath);
 
                     AddLog(
                         $"프로젝트 루트: {projectRootPath}\n" +
@@ -2184,7 +2324,7 @@ namespace CSVParserTool
                 if (cfd.ShowDialog() == CommonFileDialogResult.Ok)
                 {
                     excelSourceFolderPath = cfd.FileName;
-                    UiTheme.UpdatePathLabel(Label_ExcelSourcePath, excelSourceFolderPath);
+                    UITheme.UpdatePathLabel(Label_ExcelSourcePath, excelSourceFolderPath);
 
                     ToolSettingsStore.ExcelSourceFolderPath = excelSourceFolderPath;
                     ToolSettingsStore.Save();
@@ -2242,7 +2382,7 @@ namespace CSVParserTool
                 MessageBox.Show(msg, "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
-        private static Color LogLevelLineColor(LogLevel level) => UiTheme.LogColor(level);
+        private static Color LogLevelLineColor(LogLevel level) => UITheme.LogColor(level);
 
         private void RefreshLogDisplay()
         {
@@ -2404,20 +2544,51 @@ namespace CSVParserTool
             ToolSettingsStore.Save();
         }
 
-        private void Txt_ExportVersion_TextChanged(object sender, EventArgs e)
+        private void Txt_ExportVersion_Leave(object sender, EventArgs e)
         {
-            exportVersion = Txt_ExportVersion.Text?.Trim() ?? string.Empty;
-            previewCacheByPath.Clear();
-            if (!string.IsNullOrWhiteSpace(currentSelectedXlsxPath))
-                RefreshPreviewFromXlsx(currentSelectedXlsxPath);
+            TrySaveExportVersionSetting(showWarning: true);
         }
 
-        private void SaveExportVersionSetting()
+        private void Txt_ExportVersion_KeyDown(object sender, KeyEventArgs e)
         {
-            exportVersion = NormalizeExportVersion(Txt_ExportVersion.Text);
-            Txt_ExportVersion.Text = exportVersion;
+            if (e.KeyCode != Keys.Enter)
+                return;
+
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            SelectNextControl(Txt_ExportVersion, forward: true, tabStopOnly: true, nested: true, wrap: true);
+        }
+
+        private bool TrySaveExportVersionSetting(bool showWarning)
+        {
+            string nextVersion = NormalizeExportVersion(Txt_ExportVersion.Text);
+            if (!DataVersion.TryParse(nextVersion, out _))
+            {
+                if (showWarning && !string.Equals(lastWarnedInvalidExportVersion, nextVersion, StringComparison.Ordinal))
+                {
+                    AddLog($"Export 버전 '{nextVersion}' 형식이 올바르지 않습니다. (예: 1.0.0)", LogLevel.Warning);
+                    lastWarnedInvalidExportVersion = nextVersion;
+                }
+                return false;
+            }
+
+            lastWarnedInvalidExportVersion = string.Empty;
+            bool changed = !string.Equals(exportVersion, nextVersion, StringComparison.Ordinal);
+            exportVersion = nextVersion;
+            if (!string.Equals(Txt_ExportVersion.Text, nextVersion, StringComparison.Ordinal))
+                Txt_ExportVersion.Text = nextVersion;
+
             ToolSettingsStore.ExportVersion = exportVersion;
             ToolSettingsStore.Save();
+
+            if (changed)
+            {
+                previewCacheByPath.Clear();
+                if (!string.IsNullOrWhiteSpace(currentSelectedXlsxPath))
+                    RefreshPreviewFromXlsx(currentSelectedXlsxPath);
+            }
+
+            return true;
         }
 
         private static string NormalizeExportVersion(string raw)

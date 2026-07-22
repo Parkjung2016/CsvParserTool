@@ -82,7 +82,7 @@ namespace CSVParserTool.MiniGames
             SelectRandomGame();
             exportRunning = true;
             exportStatusLabel.Text = "Export 진행 중 · 게임은 Export 속도에 영향을 주지 않습니다.";
-            exportStatusLabel.ForeColor = UiTheme.StatusRunning;
+            exportStatusLabel.ForeColor = UITheme.StatusRunning;
             canvas.SetExportRunning(true);
         }
 
@@ -108,7 +108,7 @@ namespace CSVParserTool.MiniGames
             completionStatusText = string.IsNullOrWhiteSpace(message)
                 ? success ? "Export 완료" : "Export 실패"
                 : message;
-            exportStatusLabel.ForeColor = success ? UiTheme.LogSuccess : UiTheme.LogError;
+            exportStatusLabel.ForeColor = success ? UITheme.LogSuccess : UITheme.LogError;
             canvas.SetExportRunning(false);
             StartAutoCloseCountdown();
         }
@@ -162,16 +162,16 @@ namespace CSVParserTool.MiniGames
 
         public void ApplyTheme()
         {
-            BackColor = UiTheme.AppBackground;
-            ForeColor = UiTheme.TextPrimary;
-            gameSelector.BackColor = UiTheme.Surface;
-            gameSelector.ForeColor = UiTheme.TextPrimary;
-            descriptionLabel.ForeColor = UiTheme.TextSecondary;
-            scoreLabel.ForeColor = UiTheme.TextPrimary;
-            UiTheme.StyleCombo(gameSelector);
-            UiTheme.StyleCombo(difficultySelector);
-            UiTheme.StyleSecondaryButton(restartButton);
-            UiTheme.StyleSecondaryButton(continuePlayingButton);
+            BackColor = UITheme.AppBackground;
+            ForeColor = UITheme.TextPrimary;
+            gameSelector.BackColor = UITheme.Surface;
+            gameSelector.ForeColor = UITheme.TextPrimary;
+            descriptionLabel.ForeColor = UITheme.TextSecondary;
+            scoreLabel.ForeColor = UITheme.TextPrimary;
+            UITheme.StyleCombo(gameSelector);
+            UITheme.StyleCombo(difficultySelector);
+            UITheme.StyleSecondaryButton(restartButton);
+            UITheme.StyleSecondaryButton(continuePlayingButton);
             canvas.SetPalette(CreatePalette());
             Invalidate(true);
         }
@@ -374,14 +374,14 @@ namespace CSVParserTool.MiniGames
 
         private static MiniGamePalette CreatePalette() => new MiniGamePalette
         {
-            Background = UiTheme.PreviewBackground,
-            Surface = UiTheme.Surface,
-            Border = UiTheme.Border,
-            Text = UiTheme.TextPrimary,
-            MutedText = UiTheme.TextMuted,
-            Accent = UiTheme.Accent,
-            Success = UiTheme.LogSuccess,
-            Danger = UiTheme.LogError
+            Background = UITheme.PreviewBackground,
+            Surface = UITheme.Surface,
+            Border = UITheme.Border,
+            Text = UITheme.TextPrimary,
+            MutedText = UITheme.TextMuted,
+            Accent = UITheme.Accent,
+            Success = UITheme.LogSuccess,
+            Danger = UITheme.LogError
         };
 
     }

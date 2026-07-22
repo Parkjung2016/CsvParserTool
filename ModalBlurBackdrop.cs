@@ -16,7 +16,7 @@ namespace CSVParserTool
             public BlurOverlayPanel(Bitmap image)
             {
                 blurredImage = image;
-                BackColor = UiTheme.IsDarkMode
+                BackColor = UITheme.IsDarkMode
                     ? Color.FromArgb(28, 28, 32)
                     : Color.FromArgb(238, 240, 244);
                 BackgroundImage = blurredImage;
@@ -98,7 +98,7 @@ namespace CSVParserTool
                         down.DrawImage(source, new Rectangle(0, 0, smallWidth, smallHeight));
 
                         down.CompositingMode = CompositingMode.SourceOver;
-                        Color tint = UiTheme.IsDarkMode
+                        Color tint = UITheme.IsDarkMode
                             ? Color.FromArgb(78, 10, 10, 13)
                             : Color.FromArgb(52, 248, 249, 252);
                         using (var tintBrush = new SolidBrush(tint))

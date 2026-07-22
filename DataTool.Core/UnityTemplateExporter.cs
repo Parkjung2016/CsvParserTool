@@ -31,18 +31,6 @@ namespace CSVParserTool
                 Path.Combine(editorDir, "PJDev.Data.Editor.asmdef"), log);
             CopyTemplate(templateRoot, Path.Combine("Editor", "Extender.cs"),
                 Path.Combine(editorDir, "Extender.cs"), log);
-
-            RemoveLegacyGeneratedExtender(editorDir, log);
-        }
-
-        private static void RemoveLegacyGeneratedExtender(string editorDir, Action<string> log)
-        {
-            string legacy = Path.Combine(editorDir, "Extender.ToolGenerated.cs");
-            if (!File.Exists(legacy))
-                return;
-
-            File.Delete(legacy);
-            log?.Invoke($"Removed legacy generated extender: {legacy}");
         }
 
         private static void CopyTemplate(string templateRoot, string relativePath, string destPath, Action<string> log)

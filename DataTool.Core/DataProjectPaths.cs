@@ -17,15 +17,12 @@ namespace CSVParserTool
         public static string GameDatasDir(string projectRoot) =>
             Path.Combine(UnityAssetsDir(projectRoot), "_Game", DataTablesFolderName);
 
-        /// <summary><c>DataTables\Content</c> — CSV·Bytes·NDB.</summary>
+        /// <summary><c>DataTables\Content</c> — CSV·Bytes.</summary>
         public static string DataTablesContentDir(string projectRoot) =>
             Path.Combine(GameDatasDir(projectRoot), DataTablesContentFolderName);
 
         public static string DataCsvDir(string projectRoot) =>
             Path.Combine(DataTablesContentDir(projectRoot), "CSV");
-
-        public static string DataNdbDir(string projectRoot) =>
-            Path.Combine(DataTablesContentDir(projectRoot), "NDB");
 
         public static string DataBytesDir(string projectRoot) =>
             Path.Combine(DataTablesContentDir(projectRoot), "Bytes");

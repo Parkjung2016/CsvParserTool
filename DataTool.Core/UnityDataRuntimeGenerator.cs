@@ -11,7 +11,6 @@ namespace CSVParserTool
         public const string DataContainerBaseFileName = "DataContainerBase.ToolGenerated.g.cs";
         public const string InfoStorageFileName = "InfoStorage.ToolGenerated.g.cs";
         public const string DataSheetLoaderFileName = "DataSheetLoader.ToolGenerated.g.cs";
-        private const string ObsoleteGlobalInfoContainerFileName = "GlobalInfoContainer.ToolGenerated.g.cs";
 
         private const string IfUniTask = "#if UNITASK_INSTALLED";
         private const string ElseNoUniTask = "#else";
@@ -39,13 +38,6 @@ namespace CSVParserTool
                 unique.Add(name);
             }
 
-            string obsoleteIdRecord = Path.Combine(scriptsDir, "IDataRecord.ToolGenerated.g.cs");
-            if (File.Exists(obsoleteIdRecord))
-            {
-                File.Delete(obsoleteIdRecord);
-                log?.Invoke($"Removed obsolete IDataRecord.ToolGenerated.g.cs (no longer used).");
-            }
-
             string basePath = Path.Combine(scriptsDir, DataContainerBaseFileName);
             File.WriteAllText(basePath, BuildDataContainerBase(), new UTF8Encoding(false));
             log?.Invoke($"Generated: {basePath}");
@@ -67,18 +59,9 @@ namespace CSVParserTool
             File.WriteAllText(loaderEditorPath, BuildDataSheetLoaderEditor(), new UTF8Encoding(false));
             log?.Invoke($"Generated: {loaderEditorPath}");
 
-            string oldManagerPath = Path.Combine(scriptsDir, "DataManager.ToolGenerated.g.cs");
-            if (File.Exists(oldManagerPath))
-            {
-                File.Delete(oldManagerPath);
-                log?.Invoke("Removed obsolete DataManager.ToolGenerated.g.cs (replaced by GlobalDataContainer).");
-            }
-
             string globalPath = Path.Combine(scriptsDir, GlobalDataContainerFileName);
             File.WriteAllText(globalPath, BuildGlobalDataContainer(unique), new UTF8Encoding(false));
             log?.Invoke($"Generated: {globalPath}");
-
-            RemoveObsoleteGeneratedFile(scriptsDir, ObsoleteGlobalInfoContainerFileName, log);
 
             foreach (var name in unique)
             {
@@ -94,7 +77,7 @@ namespace CSVParserTool
         }
 
         // =========================
-        // GlobalDataContainer 생성
+        // GlobalDataContainer ??밴쉐
         // =========================
         private static string BuildGlobalDataContainer(List<string> classNames)
         {
@@ -111,12 +94,22 @@ namespace CSVParserTool
             sb.AppendLine("    public sealed class GlobalDataContainer");
             sb.AppendLine("    {");
 
-            // 싱글톤
+            // ?源???
             sb.AppendLine("        private static GlobalDataContainer instance;");
             sb.AppendLine("        public static GlobalDataContainer Instance => instance ??= new GlobalDataContainer();");
             sb.AppendLine();
+            sb.AppendLine("        public DataLoadProgressInfo CurrentLoadInfo { get; private set; }");
+            sb.AppendLine("        public event Action<DataLoadProgressInfo> LoadProgressChanged;");
+            sb.AppendLine();
+            sb.AppendLine("        private void ReportLoadProgress(DataLoadProgressInfo info, Action<DataLoadProgressInfo> callback)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            CurrentLoadInfo = info;");
+            sb.AppendLine("            LoadProgressChanged?.Invoke(info);");
+            sb.AppendLine("            callback?.Invoke(info);");
+            sb.AppendLine("        }");
+            sb.AppendLine();
 
-            // 컨테이너
+            // ?뚢뫂???瑗?
             foreach (var name in classNames)
             {
                 sb.AppendLine($"        private {name}Container {ToCamel(name)}Container;");
@@ -124,22 +117,62 @@ namespace CSVParserTool
                 sb.AppendLine();
             }
 
-            // LoadAll — DataSheetLoader가 리플렉션으로 모든 *Container.LoadAsync 호출
+            // LoadAll ??DataSheetLoader揶쎛 ?귐뗫탣??깅??곗쨮 筌뤴뫀諭?*Container.LoadAsync ?紐꾪뀱
             sb.AppendLine(IfUniTask);
-            sb.AppendLine("        public UniTask LoadTablesOnlyAsync() => DataSheetLoader.LoadAllContainersAsync(this);");
+            sb.AppendLine("        public UniTask LoadTablesOnlyAsync() => LoadTablesOnlyAsync(null);");
+            sb.AppendLine("        public UniTask LoadTablesOnlyAsync(Action<DataLoadProgressInfo> progress)");
+            sb.AppendLine("            => DataSheetLoader.LoadAllContainersAsync(this, info => ReportLoadProgress(info, progress));");
             sb.AppendLine();
-            sb.AppendLine("        public async UniTask LoadAllAsync()");
+            sb.AppendLine("        public UniTask LoadAllAsync() => LoadAllAsync(null);");
+            sb.AppendLine("        public async UniTask LoadAllAsync(Action<DataLoadProgressInfo> progress)");
             sb.AppendLine("        {");
-            sb.AppendLine("            await LoadTablesOnlyAsync();");
-            sb.AppendLine("            await InfoStorageRegistry.LoadAllAsync();");
+            sb.AppendLine("            var watch = System.Diagnostics.Stopwatch.StartNew();");
+            sb.AppendLine("            int tableCount = 0;");
+            sb.AppendLine("            await DataSheetLoader.LoadAllContainersAsync(this, info =>");
+            sb.AppendLine("            {");
+            sb.AppendLine("                tableCount = info.TotalCount;");
+            sb.AppendLine("                if (info.State != DataLoadState.Completed)");
+            sb.AppendLine("                    ReportLoadProgress(new DataLoadProgressInfo(info.State, info.CurrentTable, info.CompletedCount, info.TotalCount + 1, info.ElapsedMilliseconds, info.ErrorMessage), progress);");
+            sb.AppendLine("            });");
+            sb.AppendLine("            ReportLoadProgress(new DataLoadProgressInfo(DataLoadState.LoadingInfoStorage, \"InfoStorage\", tableCount, tableCount + 1, watch.ElapsedMilliseconds), progress);");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                await InfoStorageRegistry.LoadAllAsync();");
+            sb.AppendLine("                ReportLoadProgress(new DataLoadProgressInfo(DataLoadState.Completed, string.Empty, tableCount + 1, tableCount + 1, watch.ElapsedMilliseconds), progress);");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch (Exception ex)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                ReportLoadProgress(new DataLoadProgressInfo(DataLoadState.Failed, \"InfoStorage\", tableCount, tableCount + 1, watch.ElapsedMilliseconds, ex.Message), progress);");
+            sb.AppendLine("                throw;");
+            sb.AppendLine("            }");
             sb.AppendLine("        }");
             sb.AppendLine(ElseNoUniTask);
-            sb.AppendLine("        public void LoadTablesOnly() => DataSheetLoader.LoadAllContainers(this);");
+            sb.AppendLine("        public void LoadTablesOnly() => LoadTablesOnly(null);");
+            sb.AppendLine("        public void LoadTablesOnly(Action<DataLoadProgressInfo> progress)");
+            sb.AppendLine("            => DataSheetLoader.LoadAllContainers(this, info => ReportLoadProgress(info, progress));");
             sb.AppendLine();
-            sb.AppendLine("        public void LoadAll()");
+            sb.AppendLine("        public void LoadAll() => LoadAll(null);");
+            sb.AppendLine("        public void LoadAll(Action<DataLoadProgressInfo> progress)");
             sb.AppendLine("        {");
-            sb.AppendLine("            LoadTablesOnly();");
-            sb.AppendLine("            InfoStorageRegistry.LoadAll();");
+            sb.AppendLine("            var watch = System.Diagnostics.Stopwatch.StartNew();");
+            sb.AppendLine("            int tableCount = 0;");
+            sb.AppendLine("            DataSheetLoader.LoadAllContainers(this, info =>");
+            sb.AppendLine("            {");
+            sb.AppendLine("                tableCount = info.TotalCount;");
+            sb.AppendLine("                if (info.State != DataLoadState.Completed)");
+            sb.AppendLine("                    ReportLoadProgress(new DataLoadProgressInfo(info.State, info.CurrentTable, info.CompletedCount, info.TotalCount + 1, info.ElapsedMilliseconds, info.ErrorMessage), progress);");
+            sb.AppendLine("            });");
+            sb.AppendLine("            ReportLoadProgress(new DataLoadProgressInfo(DataLoadState.LoadingInfoStorage, \"InfoStorage\", tableCount, tableCount + 1, watch.ElapsedMilliseconds), progress);");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                InfoStorageRegistry.LoadAll();");
+            sb.AppendLine("                ReportLoadProgress(new DataLoadProgressInfo(DataLoadState.Completed, string.Empty, tableCount + 1, tableCount + 1, watch.ElapsedMilliseconds), progress);");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch (Exception ex)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                ReportLoadProgress(new DataLoadProgressInfo(DataLoadState.Failed, \"InfoStorage\", tableCount, tableCount + 1, watch.ElapsedMilliseconds, ex.Message), progress);");
+            sb.AppendLine("                throw;");
+            sb.AppendLine("            }");
             sb.AppendLine("        }");
             sb.AppendLine(EndIf);
             sb.AppendLine();
@@ -216,7 +249,7 @@ namespace CSVParserTool
             sb.AppendLine("            return byId.TryGetValue(id, out var row) ? row : null;");
             sb.AppendLine("        }");
             sb.AppendLine();
-            sb.AppendLine("        /// <summary>로드된 모든 행(시트 순서).</summary>");
+            sb.AppendLine("        /// <summary>嚥≪뮆諭??筌뤴뫀諭?????쀫뱜 ??뽮퐣).</summary>");
             sb.AppendLine("        public IReadOnlyList<T> GetAll() => all;");
             sb.AppendLine();
             sb.AppendLine("        public void Clear()");
@@ -247,7 +280,7 @@ namespace CSVParserTool
         {
             var sb = new StringBuilder();
             sb.AppendLine("// <auto-generated>");
-            sb.AppendLine("// Unity: com.unity.addressables 필수. 데이터는 Address로만 로드합니다(로컬 경로 없음).");
+            sb.AppendLine("// Unity: com.unity.addressables ?袁⑸땾. ?怨쀬뵠?怨뺣뮉 Address嚥≪뮆彛?嚥≪뮆諭??몃빍??嚥≪뮇類?野껋럥以???곸벉).");
             sb.AppendLine("using System;");
             sb.AppendLine("using System.Collections.Generic;");
             sb.AppendLine("using System.Globalization;");
@@ -266,7 +299,39 @@ namespace CSVParserTool
             sb.AppendLine();
             sb.AppendLine("namespace PJDev.Data");
             sb.AppendLine("{");
-            sb.AppendLine("    /// <summary>테이블 셀의 | 구분 값을 배열로 변환합니다.</summary>");
+            sb.AppendLine("    public enum DataLoadState");
+            sb.AppendLine("    {");
+            sb.AppendLine("        Started,");
+            sb.AppendLine("        Loading,");
+            sb.AppendLine("        Loaded,");
+            sb.AppendLine("        LoadingInfoStorage,");
+            sb.AppendLine("        Completed,");
+            sb.AppendLine("        Failed");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+            sb.AppendLine("    public sealed class DataLoadProgressInfo");
+            sb.AppendLine("    {");
+            sb.AppendLine("        public DataLoadProgressInfo(DataLoadState state, string currentTable, int completedCount, int totalCount, long elapsedMilliseconds, string errorMessage = null)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            State = state;");
+            sb.AppendLine("            CurrentTable = currentTable ?? string.Empty;");
+            sb.AppendLine("            CompletedCount = Math.Max(0, completedCount);");
+            sb.AppendLine("            TotalCount = Math.Max(0, totalCount);");
+            sb.AppendLine("            ElapsedMilliseconds = Math.Max(0L, elapsedMilliseconds);");
+            sb.AppendLine("            ErrorMessage = errorMessage ?? string.Empty;");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        public DataLoadState State { get; }");
+            sb.AppendLine("        public string CurrentTable { get; }");
+            sb.AppendLine("        public int CompletedCount { get; }");
+            sb.AppendLine("        public int TotalCount { get; }");
+            sb.AppendLine("        public long ElapsedMilliseconds { get; }");
+            sb.AppendLine("        public string ErrorMessage { get; }");
+            sb.AppendLine("        public float Progress01 => TotalCount <= 0 ? (State == DataLoadState.Completed ? 1F : 0F) : Math.Min(1F, CompletedCount / (float)TotalCount);");
+            sb.AppendLine("        public int Percent => (int)Math.Round(Progress01 * 100F);");
+            sb.AppendLine("        public bool IsFinished => State == DataLoadState.Completed || State == DataLoadState.Failed;");
+            sb.AppendLine("    }");
+            sb.AppendLine();            sb.AppendLine("    /// <summary>???뵠??????| ?닌됲뀋 揶쏅???獄쏄퀣肉닸에?癰궰??묐???덈뼄.</summary>");
             sb.AppendLine("    public sealed class PipeSeparatedArrayConverter<T> : DefaultTypeConverter");
             sb.AppendLine("    {");
             sb.AppendLine("        public override object ConvertFromString(string text, IReaderRow row, MemberMapData memberMapData)");
@@ -299,14 +364,14 @@ namespace CSVParserTool
             sb.AppendLine("        }");
             sb.AppendLine("    }");
             sb.AppendLine();
-            sb.AppendLine("    /// <summary>런타임은 Addressables, 에디터 비플레이 상태는 Export된 CSV/Bytes 파일을 직접 로드합니다.</summary>");
+            sb.AppendLine("    /// <summary>?怨??袁? Addressables, ?癒?탵????쑵逾??됱뵠 ?怨밴묶??Export??CSV/Bytes ???뵬??筌욊낯??嚥≪뮆諭??몃빍??</summary>");
             sb.AppendLine("    public static class DataSheetLoader");
             sb.AppendLine("    {");
             sb.AppendLine("        private const string UseBytesPrefsKey = \"PJDev.Data.UseBytesFile\";");
             sb.AppendLine();
             sb.AppendLine("        /// <summary>");
-            sb.AppendLine("        /// 에디터: <c>EditorPrefs</c>로 CSV/Bytes 전환(메뉴 PJDev/Data). 빌드: 항상 <c>.bytes</c>.");
-            sb.AppendLine("        /// false면 CSV만 로드(없으면 예외, bytes 폴백 없음).");
+            sb.AppendLine("        /// ?癒?탵?? <c>EditorPrefs</c>嚥?CSV/Bytes ?袁れ넎(筌롫뗀??PJDev/Data). ??슢諭? ??湲?<c>.bytes</c>.");
+            sb.AppendLine("        /// false筌?CSV筌?嚥≪뮆諭???곸몵筌???됱뇚, bytes ??媛???곸벉).");
             sb.AppendLine("        /// </summary>");
             sb.AppendLine("        public static bool UseBytesFile");
             sb.AppendLine("        {");
@@ -339,17 +404,17 @@ namespace CSVParserTool
             sb.AppendLine("#endif");
             sb.AppendLine("        }");
             sb.AppendLine();
-            sb.AppendLine("        /// <summary>Addressables 주소 접두사. 기본: <c>\"Content/Bytes/\"</c> + <c>DT_Test.bytes</c>.</summary>");
+            sb.AppendLine("        /// <summary>Addressables 雅뚯눘???臾먮あ?? 疫꿸퀡?? <c>\"Content/Bytes/\"</c> + <c>DT_Test.bytes</c>.</summary>");
             sb.AppendLine("        public static string AddressableBytesKeyPrefix { get; set; } = \"Content/Bytes/\";");
             sb.AppendLine();
-            sb.AppendLine("        /// <summary>Addressables 주소 접두사. 기본: <c>\"Content/CSV/\"</c> + <c>DT_Test.csv</c>.</summary>");
+            sb.AppendLine("        /// <summary>Addressables 雅뚯눘???臾먮あ?? 疫꿸퀡?? <c>\"Content/CSV/\"</c> + <c>DT_Test.csv</c>.</summary>");
             sb.AppendLine("        public static string AddressableCsvKeyPrefix { get; set; } = \"Content/CSV/\";");
             sb.AppendLine();
-            sb.AppendLine("        /// <summary>LoadAll 시 한 배치에 동시 로드할 컨테이너 수 (UniTask). 메모리·Addressables 부담 완화.</summary>");
+            sb.AppendLine("        /// <summary>LoadAll ????獄쏄퀣?????덈뻻 嚥≪뮆諭???뚢뫂???瑗???(UniTask). 筌롫뗀?덄뵳??췥dressables ?봔???袁れ넅.</summary>");
             sb.AppendLine("        public static int LoadBatchSize { get; set; } = 8;");
             sb.AppendLine();
             sb.AppendLine("#if UNITY_EDITOR");
-            sb.AppendLine("        /// <summary>에디터 비플레이 로드 기준 경로. Assets 폴더 기준 상대 경로입니다.</summary>");
+            sb.AppendLine("        /// <summary>?癒?탵????쑵逾??됱뵠 嚥≪뮆諭?疫꿸퀣? 野껋럥以? Assets ????疫꿸퀣? ?怨? 野껋럥以??낅빍??</summary>");
             sb.AppendLine("        public static string EditorContentRootRelativeToAssets { get; set; } = \"_Game/DataTables/Content\";");
             sb.AppendLine("#endif");
             sb.AppendLine();
@@ -454,49 +519,81 @@ namespace CSVParserTool
             sb.AppendLine("            return utcs.Task;");
             sb.AppendLine("        }");
             sb.AppendLine();
-            sb.AppendLine("        /// <summary><see cref=\"GlobalDataContainer\"/>의 public <c>*Container</c> 프로퍼티를 찾아 <c>LoadAsync</c> 호출.</summary>");
-            sb.AppendLine("        public static async UniTask LoadAllContainersAsync(GlobalDataContainer global)");
+            sb.AppendLine("        /// <summary><see cref=\"GlobalDataContainer\"/>??public <c>*Container</c> ?袁⑥쨮??노뼒??筌≪뼚釉?<c>LoadAsync</c> ?紐꾪뀱.</summary>");
+            sb.AppendLine("        public static UniTask LoadAllContainersAsync(GlobalDataContainer global) => LoadAllContainersAsync(global, null);");
+            sb.AppendLine();
+            sb.AppendLine("        public static async UniTask LoadAllContainersAsync(GlobalDataContainer global, Action<DataLoadProgressInfo> progress)");
             sb.AppendLine("        {");
             sb.AppendLine("            if (global == null)");
             sb.AppendLine("                throw new ArgumentNullException(nameof(global));");
             sb.AppendLine();
-            sb.AppendLine("            var tasks = new List<UniTask>();");
+            sb.AppendLine("            var properties = new List<PropertyInfo>();");
             sb.AppendLine("            foreach (PropertyInfo prop in typeof(GlobalDataContainer).GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))");
             sb.AppendLine("            {");
             sb.AppendLine("                if (!prop.CanRead || !IsDataContainerProperty(prop.PropertyType))");
             sb.AppendLine("                    continue;");
-            sb.AppendLine("                object container = prop.GetValue(global);");
-            sb.AppendLine("                if (container == null)");
-            sb.AppendLine("                    continue;");
-            sb.AppendLine("                MethodInfo load = prop.PropertyType.GetMethod(\"LoadAsync\", Type.EmptyTypes);");
-            sb.AppendLine("                if (load == null)");
-            sb.AppendLine("                    continue;");
-            sb.AppendLine("                object ret = load.Invoke(container, null);");
-            sb.AppendLine("                if (ret is UniTask ut)");
-            sb.AppendLine("                    tasks.Add(ut);");
+            sb.AppendLine("                if (prop.PropertyType.GetMethod(\"LoadAsync\", Type.EmptyTypes) != null)");
+            sb.AppendLine("                    properties.Add(prop);");
             sb.AppendLine("            }");
             sb.AppendLine();
-            sb.AppendLine("            if (tasks.Count == 0)");
+            sb.AppendLine("            var watch = System.Diagnostics.Stopwatch.StartNew();");
+            sb.AppendLine("            int total = properties.Count;");
+            sb.AppendLine("            int completed = 0;");
+            sb.AppendLine("            progress?.Invoke(new DataLoadProgressInfo(DataLoadState.Started, string.Empty, completed, total, watch.ElapsedMilliseconds));");
+            sb.AppendLine("            if (total == 0)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                progress?.Invoke(new DataLoadProgressInfo(DataLoadState.Completed, string.Empty, 0, 0, watch.ElapsedMilliseconds));");
             sb.AppendLine("                return;");
+            sb.AppendLine("            }");
             sb.AppendLine();
             sb.AppendLine("            int batchSize = Math.Max(1, LoadBatchSize);");
-            sb.AppendLine("            for (int offset = 0; offset < tasks.Count; offset += batchSize)");
+            sb.AppendLine("            for (int offset = 0; offset < total; offset += batchSize)");
             sb.AppendLine("            {");
-            sb.AppendLine("                int count = Math.Min(batchSize, tasks.Count - offset);");
-            sb.AppendLine("                if (count == 1)");
+            sb.AppendLine("                int count = Math.Min(batchSize, total - offset);");
+            sb.AppendLine("                var batch = new UniTask[count];");
+            sb.AppendLine("                var names = new string[count];");
+            sb.AppendLine("                for (int i = 0; i < count; i++)");
             sb.AppendLine("                {");
-            sb.AppendLine("                    await tasks[offset];");
-            sb.AppendLine("                    continue;");
+            sb.AppendLine("                    PropertyInfo prop = properties[offset + i];");
+            sb.AppendLine("                    names[i] = prop.Name;");
+            sb.AppendLine("                    progress?.Invoke(new DataLoadProgressInfo(DataLoadState.Loading, prop.Name, completed, total, watch.ElapsedMilliseconds));");
+            sb.AppendLine("                    try");
+            sb.AppendLine("                    {");
+            sb.AppendLine("                        object container = prop.GetValue(global);");
+            sb.AppendLine("                        MethodInfo load = prop.PropertyType.GetMethod(\"LoadAsync\", Type.EmptyTypes);");
+            sb.AppendLine("                        object ret = load.Invoke(container, null);");
+            sb.AppendLine("                        if (!(ret is UniTask task))");
+            sb.AppendLine("                            throw new InvalidOperationException($\"{prop.Name}.LoadAsync must return UniTask.\");");
+            sb.AppendLine("                        batch[i] = task;");
+            sb.AppendLine("                    }");
+            sb.AppendLine("                    catch (Exception ex)");
+            sb.AppendLine("                    {");
+            sb.AppendLine("                        Exception error = ex is TargetInvocationException invocation && invocation.InnerException != null ? invocation.InnerException : ex;");
+            sb.AppendLine("                        progress?.Invoke(new DataLoadProgressInfo(DataLoadState.Failed, prop.Name, completed, total, watch.ElapsedMilliseconds, error.Message));");
+            sb.AppendLine("                        throw error;");
+            sb.AppendLine("                    }");
             sb.AppendLine("                }");
             sb.AppendLine();
-            sb.AppendLine("                var batch = new UniTask[count];");
             sb.AppendLine("                for (int i = 0; i < count; i++)");
-            sb.AppendLine("                    batch[i] = tasks[offset + i];");
-            sb.AppendLine("                await UniTask.WhenAll(batch);");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    try");
+            sb.AppendLine("                    {");
+            sb.AppendLine("                        await batch[i];");
+            sb.AppendLine("                    }");
+            sb.AppendLine("                    catch (Exception ex)");
+            sb.AppendLine("                    {");
+            sb.AppendLine("                        progress?.Invoke(new DataLoadProgressInfo(DataLoadState.Failed, names[i], completed, total, watch.ElapsedMilliseconds, ex.Message));");
+            sb.AppendLine("                        throw;");
+            sb.AppendLine("                    }");
+            sb.AppendLine("                    completed++;");
+            sb.AppendLine("                    progress?.Invoke(new DataLoadProgressInfo(DataLoadState.Loaded, names[i], completed, total, watch.ElapsedMilliseconds));");
+            sb.AppendLine("                }");
             sb.AppendLine("            }");
+            sb.AppendLine("            progress?.Invoke(new DataLoadProgressInfo(DataLoadState.Completed, string.Empty, completed, total, watch.ElapsedMilliseconds));");
             sb.AppendLine("        }");
             sb.AppendLine();
-            sb.AppendLine("        public static UniTask LoadAllContainersAsync() => LoadAllContainersAsync(GlobalDataContainer.Instance);");
+            sb.AppendLine("        public static UniTask LoadAllContainersAsync() => LoadAllContainersAsync(GlobalDataContainer.Instance, null);");
+            sb.AppendLine("        public static UniTask LoadAllContainersAsync(Action<DataLoadProgressInfo> progress) => LoadAllContainersAsync(GlobalDataContainer.Instance, progress);");
             sb.AppendLine();
             sb.AppendLine("        public static async UniTask LoadAsync<T>(DataContainerBase<T> container)");
             sb.AppendLine("            where T : class");
@@ -558,7 +655,7 @@ namespace CSVParserTool
             sb.AppendLine("            if (header == null || !LooksLikeVersionRow(versionRow))");
             sb.AppendLine("                return text;");
             sb.AppendLine();
-            sb.AppendLine("            reader.ReadLine(); // 타입 행");
+            sb.AppendLine("            reader.ReadLine(); // Skip the type row.");
             sb.AppendLine("            return header + Environment.NewLine + reader.ReadToEnd();");
             sb.AppendLine("        }");
             sb.AppendLine();
@@ -605,27 +702,50 @@ namespace CSVParserTool
             sb.AppendLine("            throw new InvalidOperationException(\"Addressables load failed.\");");
             sb.AppendLine("        }");
             sb.AppendLine();
-            sb.AppendLine("        /// <summary><see cref=\"GlobalDataContainer\"/>의 public <c>*Container</c> 프로퍼티를 찾아 <c>Load</c> 호출.</summary>");
-            sb.AppendLine("        public static void LoadAllContainers(GlobalDataContainer global)");
+            sb.AppendLine("        /// <summary><see cref=\"GlobalDataContainer\"/>??public <c>*Container</c> ?袁⑥쨮??노뼒??筌≪뼚釉?<c>Load</c> ?紐꾪뀱.</summary>");
+            sb.AppendLine("        public static void LoadAllContainers(GlobalDataContainer global) => LoadAllContainers(global, null);");
+            sb.AppendLine();
+            sb.AppendLine("        public static void LoadAllContainers(GlobalDataContainer global, Action<DataLoadProgressInfo> progress)");
             sb.AppendLine("        {");
             sb.AppendLine("            if (global == null)");
             sb.AppendLine("                throw new ArgumentNullException(nameof(global));");
             sb.AppendLine();
+            sb.AppendLine("            var properties = new List<PropertyInfo>();");
             sb.AppendLine("            foreach (PropertyInfo prop in typeof(GlobalDataContainer).GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))");
             sb.AppendLine("            {");
             sb.AppendLine("                if (!prop.CanRead || !IsDataContainerProperty(prop.PropertyType))");
             sb.AppendLine("                    continue;");
-            sb.AppendLine("                object container = prop.GetValue(global);");
-            sb.AppendLine("                if (container == null)");
-            sb.AppendLine("                    continue;");
-            sb.AppendLine("                MethodInfo load = prop.PropertyType.GetMethod(\"Load\", Type.EmptyTypes);");
-            sb.AppendLine("                if (load == null)");
-            sb.AppendLine("                    continue;");
-            sb.AppendLine("                load.Invoke(container, null);");
+            sb.AppendLine("                if (prop.PropertyType.GetMethod(\"Load\", Type.EmptyTypes) != null)");
+            sb.AppendLine("                    properties.Add(prop);");
             sb.AppendLine("            }");
+            sb.AppendLine();
+            sb.AppendLine("            var watch = System.Diagnostics.Stopwatch.StartNew();");
+            sb.AppendLine("            int total = properties.Count;");
+            sb.AppendLine("            int completed = 0;");
+            sb.AppendLine("            progress?.Invoke(new DataLoadProgressInfo(DataLoadState.Started, string.Empty, completed, total, watch.ElapsedMilliseconds));");
+            sb.AppendLine("            foreach (PropertyInfo prop in properties)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                progress?.Invoke(new DataLoadProgressInfo(DataLoadState.Loading, prop.Name, completed, total, watch.ElapsedMilliseconds));");
+            sb.AppendLine("                try");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    object container = prop.GetValue(global);");
+            sb.AppendLine("                    MethodInfo load = prop.PropertyType.GetMethod(\"Load\", Type.EmptyTypes);");
+            sb.AppendLine("                    load.Invoke(container, null);");
+            sb.AppendLine("                }");
+            sb.AppendLine("                catch (Exception ex)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    Exception error = ex is TargetInvocationException invocation && invocation.InnerException != null ? invocation.InnerException : ex;");
+            sb.AppendLine("                    progress?.Invoke(new DataLoadProgressInfo(DataLoadState.Failed, prop.Name, completed, total, watch.ElapsedMilliseconds, error.Message));");
+            sb.AppendLine("                    throw error;");
+            sb.AppendLine("                }");
+            sb.AppendLine("                completed++;");
+            sb.AppendLine("                progress?.Invoke(new DataLoadProgressInfo(DataLoadState.Loaded, prop.Name, completed, total, watch.ElapsedMilliseconds));");
+            sb.AppendLine("            }");
+            sb.AppendLine("            progress?.Invoke(new DataLoadProgressInfo(DataLoadState.Completed, string.Empty, completed, total, watch.ElapsedMilliseconds));");
             sb.AppendLine("        }");
             sb.AppendLine();
-            sb.AppendLine("        public static void LoadAllContainers() => LoadAllContainers(GlobalDataContainer.Instance);");
+            sb.AppendLine("        public static void LoadAllContainers() => LoadAllContainers(GlobalDataContainer.Instance, null);");
+            sb.AppendLine("        public static void LoadAllContainers(Action<DataLoadProgressInfo> progress) => LoadAllContainers(GlobalDataContainer.Instance, progress);");
             sb.AppendLine();
             sb.AppendLine("        public static void Load<T>(DataContainerBase<T> container)");
             sb.AppendLine("            where T : class");
@@ -785,8 +905,8 @@ namespace CSVParserTool
             sb.AppendLine("        void ClearLoadedData();");
             sb.AppendLine("    }");
             sb.AppendLine();            sb.AppendLine("    /// <summary>");
-            sb.AppendLine("    /// 시트 원본(<see cref=\"DataContainerBase{T}\"/>)을 Addressables로 로드한 뒤 가공합니다.");
-            sb.AppendLine("    /// Unity에서 <c>InfoStorageBase&lt;T&gt;</c>를 상속해 가공 로직을 작성하세요.");
+            sb.AppendLine("    /// ??쀫뱜 ?癒?궚(<see cref=\"DataContainerBase{T}\"/>)??Addressables嚥?嚥≪뮆諭????揶쎛?⑤벏鍮??덈뼄.");
+            sb.AppendLine("    /// Unity?癒?퐣 <c>InfoStorageBase&lt;T&gt;</c>???怨몃꺗??揶쎛??嚥≪뮇彛???臾믨쉐??뤾쉭??");
             sb.AppendLine("    /// </summary>");
             sb.AppendLine("    public abstract class InfoStorageBase<T> : IInfoStorage<T>, IClearableInfoStorage");
             sb.AppendLine("        where T : class");
@@ -894,7 +1014,7 @@ namespace CSVParserTool
             sb.AppendLine(EndIf);
             sb.AppendLine("    }");
             sb.AppendLine();
-            sb.AppendLine("    /// <summary>다른 어셈블리에서 <see cref=\"IInfoStorage\"/>를 등록·조회·일괄 로드합니다.</summary>");
+            sb.AppendLine("    /// <summary>??삘뀲 ??곷띺뇡遺얄봺?癒?퐣 <see cref=\"IInfoStorage\"/>???源낆쨯夷뚩?怨좎돳夷??⑦겣 嚥≪뮆諭??몃빍??</summary>");
             sb.AppendLine("    public static class InfoStorageRegistry");
             sb.AppendLine("    {");
             sb.AppendLine("        private static readonly List<IInfoStorage> storages = new List<IInfoStorage>();");
@@ -980,16 +1100,6 @@ namespace CSVParserTool
             sb.AppendLine("    }");
             sb.AppendLine("}");
             return sb.ToString();
-        }
-
-        private static void RemoveObsoleteGeneratedFile(string scriptsDir, string fileName, Action<string> log)
-        {
-            string path = Path.Combine(scriptsDir, fileName);
-            if (!File.Exists(path))
-                return;
-
-            File.Delete(path);
-            log?.Invoke($"Removed obsolete generated file: {path}");
         }
 
         private static string ToCamel(string name)

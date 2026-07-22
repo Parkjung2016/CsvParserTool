@@ -29,9 +29,9 @@ namespace CSVParserTool
             MinimizeBox = false;
             ShowInTaskbar = false;
             ClientSize = new Size(600, 438);
-            Font = UiTheme.FontUi;
-            BackColor = UiTheme.AppBackground;
-            ForeColor = UiTheme.TextPrimary;
+            Font = UITheme.FontUI;
+            BackColor = UITheme.AppBackground;
+            ForeColor = UITheme.TextPrimary;
             Padding = new Padding(24);
             Opacity = 0;
 
@@ -40,7 +40,7 @@ namespace CSVParserTool
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
                 RowCount = 5,
-                BackColor = UiTheme.AppBackground,
+                BackColor = UITheme.AppBackground,
                 Margin = Padding.Empty,
                 Padding = Padding.Empty
             };
@@ -54,15 +54,15 @@ namespace CSVParserTool
             {
                 AutoSize = true,
                 Text = "PJDev Data Tool 버전 정보",
-                Font = UiTheme.FontTitle,
-                ForeColor = UiTheme.Accent,
+                Font = UITheme.FontTitle,
+                ForeColor = UITheme.Accent,
                 Margin = new Padding(0, 0, 0, 5)
             };
             var subtitle = new Label
             {
                 AutoSize = true,
                 Text = "현재 설치된 버전과 GitHub의 최신 배포 버전을 확인합니다.",
-                ForeColor = UiTheme.TextMuted,
+                ForeColor = UITheme.TextMuted,
                 Margin = new Padding(0, 0, 0, 18)
             };
 
@@ -71,7 +71,7 @@ namespace CSVParserTool
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
                 RowCount = 5,
-                BackColor = UiTheme.Surface,
+                BackColor = UITheme.Surface,
                 Padding = new Padding(18),
                 Margin = new Padding(0, 0, 0, 16)
             };
@@ -90,9 +90,9 @@ namespace CSVParserTool
             {
                 AutoSize = true,
                 Text = "GitHub 저장소 열기",
-                LinkColor = UiTheme.Accent,
-                ActiveLinkColor = UiTheme.AccentPressed,
-                VisitedLinkColor = UiTheme.Accent,
+                LinkColor = UITheme.Accent,
+                ActiveLinkColor = UITheme.AccentPressed,
+                VisitedLinkColor = UITheme.Accent,
                 Margin = Padding.Empty,
                 Anchor = AnchorStyles.Left
             };
@@ -104,7 +104,7 @@ namespace CSVParserTool
             {
                 Dock = DockStyle.Top,
                 Height = 62,
-                BackColor = UiTheme.SurfaceMuted,
+                BackColor = UITheme.SurfaceMuted,
                 Padding = new Padding(14, 10, 14, 10),
                 Margin = new Padding(0, 0, 0, 14)
             };
@@ -112,7 +112,7 @@ namespace CSVParserTool
             {
                 Dock = DockStyle.Fill,
                 Text = "최신 버전을 확인하고 있습니다…",
-                ForeColor = UiTheme.TextSecondary,
+                ForeColor = UITheme.TextSecondary,
                 TextAlign = ContentAlignment.MiddleLeft,
                 AutoEllipsis = true
             };
@@ -138,9 +138,9 @@ namespace CSVParserTool
             var closeButton = new Button { Text = "닫기", AutoSize = true, DialogResult = DialogResult.Cancel, Margin = Padding.Empty, Padding = new Padding(12, 4, 12, 4) };
             checkButton = new Button { Text = "다시 확인", AutoSize = true, Margin = new Padding(0, 0, 8, 0), Padding = new Padding(12, 4, 12, 4) };
             updateButton = new Button { Text = "업데이트", AutoSize = true, Visible = false, Margin = new Padding(0, 0, 8, 0), Padding = new Padding(16, 4, 16, 4) };
-            UiTheme.StyleSecondaryButton(closeButton);
-            UiTheme.StyleSecondaryButton(checkButton);
-            UiTheme.StylePrimaryButton(updateButton);
+            UITheme.StyleSecondaryButton(closeButton);
+            UITheme.StyleSecondaryButton(checkButton);
+            UITheme.StylePrimaryButton(updateButton);
             checkButton.Click += async (_, __) => await CheckForUpdateAsync(forceRefresh: true);
             updateButton.Click += async (_, __) => await InstallUpdateAsync();
             actions.Controls.Add(closeButton);
@@ -158,16 +158,30 @@ namespace CSVParserTool
             Controls.Add(root);
             CancelButton = closeButton;
 
+            if (!ToolRuntimeEnvironment.UpdatesAllowed)
+            {
+                subtitle.Text = "Visual Studio 또는 로컬 빌드 실행에서는 업데이트 기능을 사용하지 않습니다.";
+                statusLabel.Text = "개발 실행 · 업데이트 확인과 설치가 비활성화되었습니다.";
+                latestVersionLabel.Text = "확인 안 함";
+                latestDateLabel.Text = "확인 안 함";
+                checkButton.Visible = false;
+                updateButton.Visible = false;
+            }
+
             Shown += async (_, __) =>
             {
                 await FadeInAsync();
-                await CheckForUpdateAsync();
+                if (ToolRuntimeEnvironment.UpdatesAllowed)
+                    await CheckForUpdateAsync();
             };
             FormClosed += (_, __) => cancellation?.Cancel();
         }
 
         private async Task CheckForUpdateAsync(bool forceRefresh = false)
         {
+            if (!ToolRuntimeEnvironment.UpdatesAllowed)
+                return;
+
             if (checking) return;
             checking = true;
             cancellation?.Cancel();
@@ -175,7 +189,7 @@ namespace CSVParserTool
             checkButton.Enabled = false;
             updateButton.Visible = false;
             progressBar.Visible = false;
-            statusLabel.ForeColor = UiTheme.TextSecondary;
+            statusLabel.ForeColor = UITheme.TextSecondary;
             statusLabel.Text = "GitHub에서 최신 버전을 확인하고 있습니다…";
             latestVersionLabel.Text = "확인 중…";
             latestDateLabel.Text = "확인 중…";
@@ -190,7 +204,7 @@ namespace CSVParserTool
                 if (availableUpdate.IsNewer)
                 {
                     statusLabel.Text = $"새 버전 v{availableUpdate.VersionText}을 사용할 수 있습니다.";
-                    statusLabel.ForeColor = UiTheme.Accent;
+                    statusLabel.ForeColor = UITheme.Accent;
                     updateButton.Visible = true;
                     updateButton.Enabled = !string.IsNullOrWhiteSpace(availableUpdate.DownloadUrl);
                     if (!updateButton.Enabled)
@@ -199,7 +213,7 @@ namespace CSVParserTool
                 else
                 {
                     statusLabel.Text = "현재 최신 버전을 사용하고 있습니다.";
-                    statusLabel.ForeColor = UiTheme.LogSuccess;
+                    statusLabel.ForeColor = UITheme.LogSuccess;
                 }
             }
             catch (OperationCanceledException) { }
@@ -210,7 +224,7 @@ namespace CSVParserTool
                 latestDateLabel.Text = "확인 실패";
                 releaseLink.Text = "GitHub 저장소 열기";
                 statusLabel.Text = ex.Message;
-                statusLabel.ForeColor = UiTheme.LogWarning;
+                statusLabel.ForeColor = UITheme.LogWarning;
             }
             finally
             {
@@ -221,6 +235,9 @@ namespace CSVParserTool
 
         private async Task InstallUpdateAsync()
         {
+            if (!ToolRuntimeEnvironment.UpdatesAllowed)
+                return;
+
             if (availableUpdate == null || !availableUpdate.IsNewer) return;
             DialogResult answer = MessageBox.Show(
                 $"v{availableUpdate.VersionText}을 다운로드하고 설치할까요?\r\n\r\n설치가 시작되면 툴이 자동으로 종료된 뒤 다시 실행됩니다.",
@@ -233,7 +250,7 @@ namespace CSVParserTool
             updateButton.Enabled = false;
             progressBar.Value = 0;
             progressBar.Visible = true;
-            statusLabel.ForeColor = UiTheme.Accent;
+            statusLabel.ForeColor = UITheme.Accent;
             statusLabel.Text = "업데이트를 다운로드하고 있습니다…";
 
             try
@@ -254,7 +271,7 @@ namespace CSVParserTool
                 progressBar.Visible = false;
                 checkButton.Enabled = true;
                 updateButton.Enabled = true;
-                statusLabel.ForeColor = UiTheme.LogError;
+                statusLabel.ForeColor = UITheme.LogError;
                 statusLabel.Text = "업데이트를 설치하지 못했습니다.";
                 MessageBox.Show(this, ex.Message, "업데이트 실패", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
@@ -269,7 +286,7 @@ namespace CSVParserTool
             {
                 AutoSize = true,
                 Text = label,
-                ForeColor = UiTheme.TextMuted,
+                ForeColor = UITheme.TextMuted,
                 Anchor = AnchorStyles.Left,
                 Margin = Padding.Empty
             }, 0, row);
@@ -280,8 +297,8 @@ namespace CSVParserTool
         {
             AutoSize = true,
             Text = text,
-            Font = UiTheme.FontUiMedium,
-            ForeColor = UiTheme.TextPrimary,
+            Font = UITheme.FontUIMedium,
+            ForeColor = UITheme.TextPrimary,
             Anchor = AnchorStyles.Left,
             Margin = Padding.Empty
         };
