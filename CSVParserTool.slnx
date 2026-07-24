@@ -2,4 +2,6 @@
   <Project Path="DataTool.Core\DataTool.Core.csproj" Id="a1b2c3d4-e5f6-7890-abcd-ef1234567001" />
   <Project Path="CSVParserTool.csproj" Id="8d7b862b-158c-439a-998f-355d5308ce6b" />
   <Project Path="DataTool.Cli\DataTool.Cli.csproj" Id="a1b2c3d4-e5f6-7890-abcd-ef1234567002" />
+  <Project Path="DataTool.PerformanceTests\DataTool.PerformanceTests.csproj" Id="a1b2c3d4-e5f6-7890-abcd-ef1234567003" />
+  <Project Path="DataTool.UILayoutTests\DataTool.UILayoutTests.csproj" Id="a1b2c3d4-e5f6-7890-abcd-ef1234567004" />
 </Solution>

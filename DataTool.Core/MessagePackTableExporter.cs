@@ -50,7 +50,7 @@ namespace CSVParserTool
             string dir = Path.GetDirectoryName(outputPath);
             if (!string.IsNullOrEmpty(dir))
                 Directory.CreateDirectory(dir);
-            File.WriteAllBytes(outputPath, bytes);
+            GeneratedFileWriter.WriteAllBytesIfChanged(outputPath, bytes);
         }
 
         public static byte[] BuildBytes(CsvTableParseResult table)

@@ -142,7 +142,7 @@ namespace CSVParserTool
                 card.Selected = card.Theme == theme;
         }
 
-        private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled && UITheme.CurrentTheme == AppTheme.Default;
+        private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled;
 
         private void StartEntranceAnimation()
         {

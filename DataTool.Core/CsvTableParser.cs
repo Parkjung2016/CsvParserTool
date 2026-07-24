@@ -291,7 +291,7 @@ namespace CSVParserTool
             if (!string.IsNullOrEmpty(dir))
                 Directory.CreateDirectory(dir);
 
-            File.WriteAllText(csvPath, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            GeneratedFileWriter.WriteAllTextIfChanged(csvPath, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         }
 
         private static void ValidateUniqueIds(

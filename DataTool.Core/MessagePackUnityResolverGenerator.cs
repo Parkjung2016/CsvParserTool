@@ -36,7 +36,7 @@ namespace CSVParserTool
 
             var model = BuildModel(tables);
             string code = BuildSource(model);
-            File.WriteAllText(outputPath, code, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            GeneratedFileWriter.WriteAllTextIfChanged(outputPath, code, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             log?.Invoke($"MessagePack: {outputPath} ({model.DataClasses.Count} type(s))");
         }
 
@@ -477,7 +477,7 @@ namespace CSVParserTool
             sb.AppendLine("    }");
             sb.AppendLine("}");
             AppendPragmaRestore(sb);
-            File.WriteAllText(outputPath, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            GeneratedFileWriter.WriteAllTextIfChanged(outputPath, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         }
 
         private static void AppendPragmaDisable(StringBuilder sb)

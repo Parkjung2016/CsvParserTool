@@ -37,7 +37,7 @@ namespace CSVParserTool
         {
             if (TryReadEmbeddedTemplate(relativePath, out string embedded))
             {
-                File.WriteAllText(destPath, embedded, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                GeneratedFileWriter.WriteAllTextIfChanged(destPath, embedded, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
                 log?.Invoke($"Deployed: {destPath}");
                 return;
             }

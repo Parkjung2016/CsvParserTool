@@ -52,16 +52,16 @@ namespace CSVParserTool
                 MascotPose.Hello,
                 MascotPose.Point,
                 MascotPose.Hello,
-                MascotPose.Celebrate);            var title = new Label
-            {
-                AutoSize = true,
-                Text = "처음 오셨군요!",
-                Font = UITheme.FontTitle,
-                ForeColor = UITheme.TextPrimary,
-                TextAlign = ContentAlignment.MiddleCenter,
-                Margin = new Padding(0, 0, 0, 7),
-                Anchor = AnchorStyles.None
-            };
+                MascotPose.Celebrate); var title = new Label
+                {
+                    AutoSize = true,
+                    Text = "처음 오셨군요!",
+                    Font = UITheme.FontTitle,
+                    ForeColor = UITheme.TextPrimary,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    Margin = new Padding(0, 0, 0, 7),
+                    Anchor = AnchorStyles.None
+                };
             var subtitle = new Label
             {
                 AutoSize = true,
@@ -185,7 +185,7 @@ namespace CSVParserTool
             table.Controls.Add(line, 0, row);
         }
 
-        private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled && UITheme.CurrentTheme == AppTheme.Default;
+        private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled;
 
         private void StartEntranceAnimation()
         {

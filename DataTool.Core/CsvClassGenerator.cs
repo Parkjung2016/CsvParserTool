@@ -172,11 +172,7 @@ public static class CsvClassGenerator
         int maxRows,
         CsvParseOptions options)
     {
-        string csv = XlsxPreviewReader.ReadFirstWorksheetAsCsv(xlsxPath, maxRows);
-        string[] lines = csv
-            .Replace("\r\n", "\n")
-            .Replace('\r', '\n')
-            .Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        string[] lines = PreviewWorkbookCache.GetLines(xlsxPath, maxRows);
 
         if (lines.Length < 1)
             throw new InvalidOperationException("Preview requires at least a header row.");

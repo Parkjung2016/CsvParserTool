@@ -131,7 +131,7 @@ namespace CSVParserTool
         {
             Directory.CreateDirectory(scriptsDir);
             string path = Path.Combine(scriptsDir, GeneratedFileName);
-            File.WriteAllText(path, GenerateSource(catalog), new UTF8Encoding(false));
+            GeneratedFileWriter.WriteAllTextIfChanged(path, GenerateSource(catalog), new UTF8Encoding(false));
             log?.Invoke($"Enum: {path} ({catalog.DeclarationOrder.Count}개)");
             return path;
         }

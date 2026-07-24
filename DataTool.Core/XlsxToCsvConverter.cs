@@ -97,12 +97,12 @@ namespace CSVParserTool
                 var used = ws.RangeUsed();
                 if (used == null)
                 {
-                    File.WriteAllText(csvPath, string.Empty, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                    GeneratedFileWriter.WriteAllTextIfChanged(csvPath, string.Empty, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
                     return;
                 }
 
                 string csv = BuildExportCsvFromWorksheet(ws, used);
-                File.WriteAllText(csvPath, csv, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                GeneratedFileWriter.WriteAllTextIfChanged(csvPath, csv, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             }
         }
 

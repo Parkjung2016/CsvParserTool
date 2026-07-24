@@ -278,7 +278,7 @@ namespace CSVParserTool
                     break;
             }
         }
-        private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled && UITheme.CurrentTheme == AppTheme.Default;
+        private static bool AnimationsEnabled => SystemInformation.IsMenuAnimationEnabled;
 
         private void ToolInfoForm_Shown(object sender, EventArgs e)
         {

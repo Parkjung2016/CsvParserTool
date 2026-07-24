@@ -483,7 +483,7 @@ namespace CSVParserTool
                 outcome.ParseResult = table;
 
                 string csPath = Path.Combine(scriptsDir, classFileName + "Container.cs");
-                File.WriteAllText(csPath, CsvClassGenerator.GenerateTableContainerFile(table), Encoding.UTF8);
+                GeneratedFileWriter.WriteAllTextIfChanged(csPath, CsvClassGenerator.GenerateTableContainerFile(table), Encoding.UTF8);
                 outcome.LogLines.Add($"Script: {csPath}");
 
                 CsvTableParser.WriteDeployedCsv(csvPath, table);

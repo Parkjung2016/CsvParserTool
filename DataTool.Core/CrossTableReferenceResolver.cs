@@ -6,14 +6,15 @@ namespace CSVParserTool
     /// <summary>전체 테이블의 ref Table.Column 스키마를 검증하고 Id를 실제 값으로 치환한다.</summary>
     public static class CrossTableReferenceResolver
     {
-        private sealed class Context
+        private sealed class ReferenceResolutionContext
         {
             public readonly IReadOnlyList<CsvTableParseResult> Tables;
             public readonly Dictionary<string, CsvTableParseResult> TablesByClass;
             public readonly Dictionary<CsvTableParseResult, Dictionary<string, int>> IdIndexes = new();
             public readonly Dictionary<string, HashSet<string>> ColumnValueIndexes = new(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, int> TargetColumnIndexes = new(StringComparer.OrdinalIgnoreCase);
 
-            public Context(IReadOnlyList<CsvTableParseResult> tables)
+            public ReferenceResolutionContext(IReadOnlyList<CsvTableParseResult> tables)
             {
                 Tables = tables;
                 TablesByClass = new Dictionary<string, CsvTableParseResult>(StringComparer.OrdinalIgnoreCase);
@@ -36,7 +37,7 @@ namespace CSVParserTool
             if (tables == null)
                 throw new ArgumentNullException(nameof(tables));
 
-            var context = new Context(tables);
+            var context = new ReferenceResolutionContext(tables);
             var resolvingTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var resolvedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -50,6 +51,7 @@ namespace CSVParserTool
             {
                 for (int row = 0; row < table.DataRows.Count; row++)
                 {
+                    var resolvingCells = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     for (int column = 0; column < table.Headers.Length; column++)
                     {
                         if (GetReference(table, column) == null)
@@ -60,14 +62,14 @@ namespace CSVParserTool
                             table,
                             row,
                             column,
-                            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+                            resolvingCells);
                     }
                 }
             }
         }
 
         private static string ResolveColumnType(
-            Context context,
+            ReferenceResolutionContext context,
             CsvTableParseResult table,
             int column,
             HashSet<string> resolving,
@@ -91,7 +93,7 @@ namespace CSVParserTool
                 throw new InvalidOperationException($"순환 참조가 있습니다: {DisplayTable(table)}.{table.Headers[column]}");
 
             CsvTableParseResult targetTable = FindTable(context, table, column, reference);
-            int targetColumn = FindTargetColumn(targetTable, reference.ColumnName, table, column);
+            int targetColumn = FindTargetColumn(context, targetTable, reference.ColumnName, table, column);
             reference = new CsvColumnReference(
                 targetTable.ClassName,
                 targetTable.Headers[targetColumn],
@@ -115,7 +117,7 @@ namespace CSVParserTool
         }
 
         private static string ResolveCellValue(
-            Context context,
+            ReferenceResolutionContext context,
             CsvTableParseResult sourceTable,
             int sourceRow,
             int sourceColumn,
@@ -130,7 +132,7 @@ namespace CSVParserTool
                 throw new InvalidOperationException($"순환 참조가 있습니다: {SourceLocation(sourceTable, sourceRow, sourceColumn)}");
 
             CsvTableParseResult targetTable = FindTable(context, sourceTable, sourceColumn, reference);
-            int targetColumn = FindTargetColumn(targetTable, reference.ColumnName, sourceTable, sourceColumn);
+            int targetColumn = FindTargetColumn(context, targetTable, reference.ColumnName, sourceTable, sourceColumn);
             string sourceValue = Cell(sourceTable, sourceRow, sourceColumn);
             if (reference.IsValidationOnly)
             {
@@ -182,7 +184,7 @@ namespace CSVParserTool
         }
 
         private static string ResolveReferenceId(
-            Context context,
+            ReferenceResolutionContext context,
             CsvTableParseResult sourceTable,
             int sourceRow,
             int sourceColumn,
@@ -208,7 +210,7 @@ namespace CSVParserTool
         }
 
         private static void ValidateReferenceValues(
-            Context context,
+            ReferenceResolutionContext context,
             CsvTableParseResult sourceTable,
             int sourceRow,
             int sourceColumn,
@@ -242,7 +244,7 @@ namespace CSVParserTool
         }
 
         private static bool ContainsTargetValue(
-            Context context,
+            ReferenceResolutionContext context,
             CsvTableParseResult targetTable,
             int targetColumn,
             string value)
@@ -273,7 +275,7 @@ namespace CSVParserTool
         }
 
         private static CsvTableParseResult FindTable(
-            Context context,
+            ReferenceResolutionContext context,
             CsvTableParseResult sourceTable,
             int sourceColumn,
             CsvColumnReference reference)
@@ -287,11 +289,16 @@ namespace CSVParserTool
         }
 
         private static int FindTargetColumn(
+            ReferenceResolutionContext context,
             CsvTableParseResult targetTable,
             string targetColumnName,
             CsvTableParseResult sourceTable,
             int sourceColumn)
         {
+            string cacheKey = targetTable.ClassName + ":" + targetColumnName;
+            if (context.TargetColumnIndexes.TryGetValue(cacheKey, out int cached))
+                return cached;
+
             int found = -1;
             for (int i = 0; i < targetTable.Headers.Length; i++)
             {
@@ -308,13 +315,16 @@ namespace CSVParserTool
             }
 
             if (found >= 0)
+            {
+                context.TargetColumnIndexes[cacheKey] = found;
                 return found;
+            }
 
             throw new InvalidOperationException(
                 $"{DisplayTable(sourceTable)}.{sourceTable.Headers[sourceColumn]}: {DisplayTable(targetTable)}에 '{targetColumnName}' 컬럼이 없습니다.");
         }
 
-        private static Dictionary<string, int> GetIdIndex(Context context, CsvTableParseResult table)
+        private static Dictionary<string, int> GetIdIndex(ReferenceResolutionContext context, CsvTableParseResult table)
         {
             if (context.IdIndexes.TryGetValue(table, out Dictionary<string, int> cached))
                 return cached;
@@ -342,7 +352,7 @@ namespace CSVParserTool
             return result;
         }
 
-        private static void RegisterReferencedEnum(Context context, CsvTableParseResult table, string columnType)
+        private static void RegisterReferencedEnum(ReferenceResolutionContext context, CsvTableParseResult table, string columnType)
         {
             if (CsvColumnTypes.TryGetArrayElementType(columnType, out string elementType))
                 columnType = elementType;

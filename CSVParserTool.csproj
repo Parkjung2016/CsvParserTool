@@ -65,6 +65,10 @@
 
 		<Compile Remove="DataTool.Cli\**\*" />
 
+        <Compile Remove="DataTool.PerformanceTests\**\*" />
+
+        <Compile Remove="DataTool.UILayoutTests\**\*" />
+
 		<Compile Remove="scripts\**\*" />
 
 	</ItemGroup>

@@ -49,9 +49,9 @@ namespace CSVParserTool
 
         public static readonly Font FontUI = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
         public static readonly Font FontUIMedium = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point);
-        public static readonly Font FontTitle = new Font("Segoe UI Semibold", 13F, FontStyle.Regular, GraphicsUnit.Point);
+        public static readonly Font FontTitle = new Font("Segoe UI Semibold", 15F, FontStyle.Regular, GraphicsUnit.Point);
         public static readonly Font FontSubtitle = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
-        public static readonly Font FontSection = new Font("Segoe UI Semibold", 8.25F, FontStyle.Regular, GraphicsUnit.Point);
+        public static readonly Font FontSection = new Font("Segoe UI Semibold", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
         public static readonly Font FontMono = new Font("Cascadia Mono", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
         public static readonly Font FontMonoFallback = new Font("Consolas", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
 
@@ -249,7 +249,7 @@ namespace CSVParserTool
             bool dimensional = CurrentTheme != AppTheme.Default;
             panel.Padding = dimensional
                 ? accent ? new Padding(24, 18, 28, 20) : new Padding(20, 14, 24, 20)
-                : accent ? new Padding(20, 16, 20, 12) : new Padding(16, 12, 16, 12);
+                : accent ? new Padding(22, 16, 22, 16) : new Padding(18, 14, 18, 14);
             Theme3DRenderer.AttachPanel(panel, accent);
         }
 
@@ -257,7 +257,7 @@ namespace CSVParserTool
         {
             panel.BackColor = Surface;
             panel.Padding = CurrentTheme == AppTheme.Default
-                ? new Padding(12, 10, 12, 10)
+                ? new Padding(16, 14, 16, 14)
                 : new Padding(14, 12, 20, 20);
             Theme3DRenderer.AttachPanel(panel, accent: false);
         }
@@ -266,7 +266,7 @@ namespace CSVParserTool
         {
             panel.BackColor = PreviewBackground;
             panel.Padding = CurrentTheme == AppTheme.Default
-                ? new Padding(10, 8, 10, 8)
+                ? new Padding(16, 14, 16, 14)
                 : new Padding(14, 12, 20, 20);
             Theme3DRenderer.AttachPanel(panel, accent: false);
         }
@@ -275,7 +275,7 @@ namespace CSVParserTool
         {
             panel.BackColor = LogBackground;
             panel.Padding = CurrentTheme == AppTheme.Default
-                ? new Padding(12, 10, 12, 10)
+                ? new Padding(16, 14, 16, 14)
                 : new Padding(14, 12, 20, 20);
             Theme3DRenderer.AttachPanel(panel, accent: false);
         }
@@ -285,7 +285,7 @@ namespace CSVParserTool
             label.Font = FontSection;
             label.ForeColor = TextSecondary;
             label.AutoSize = false;
-            label.Height = 24;
+            label.Height = 28;
         }
 
         internal static void StyleCaptionLabel(Label label)
@@ -335,7 +335,7 @@ namespace CSVParserTool
             listBox.BackColor = Surface;
             listBox.ForeColor = TextPrimary;
             listBox.IntegralHeight = false;
-            listBox.ItemHeight = 26;
+            listBox.ItemHeight = 30;
         }
 
         internal static void StylePreviewBox(RichTextBox box)
@@ -369,7 +369,7 @@ namespace CSVParserTool
             bar.Minimum = 0;
             bar.Maximum = 100;
             bar.Value = 0;
-            bar.Height = 18;
+            bar.Height = 12;
         }
 
         internal static void StyleExportGrid(DataGridView grid)
@@ -404,8 +404,8 @@ namespace CSVParserTool
             button.ForeColor = TextOnAccent;
             button.Font = FontUIMedium;
             button.Cursor = Cursors.Hand;
-            button.Padding = new Padding(12, tall ? 8 : 4, 12, tall ? 8 : 4);
-            button.MinimumSize = new Size(0, CurrentTheme == AppTheme.Default ? (tall ? 36 : 30) : (tall ? 46 : 38));
+            button.Padding = new Padding(14, tall ? 8 : 5, 14, tall ? 8 : 5);
+            button.MinimumSize = new Size(0, CurrentTheme == AppTheme.Default ? (tall ? 40 : 34) : (tall ? 46 : 38));
             Theme3DRenderer.AttachButton(button, primary: true);
         }
 
@@ -427,8 +427,8 @@ namespace CSVParserTool
             button.ForeColor = TextPrimary;
             button.Font = FontUI;
             button.Cursor = Cursors.Hand;
-            button.Padding = new Padding(10, 4, 10, 4);
-            button.MinimumSize = new Size(0, CurrentTheme == AppTheme.Default ? 30 : 38);
+            button.Padding = new Padding(12, 5, 12, 5);
+            button.MinimumSize = new Size(0, CurrentTheme == AppTheme.Default ? 34 : 38);
             Theme3DRenderer.AttachButton(button, primary: false);
         }
 
