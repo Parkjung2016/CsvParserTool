@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -18,7 +18,7 @@ namespace CSVParserTool
             IReadOnlyDictionary<string, IReadOnlyList<string>> members)
         {
             DeclarationOrder = declarationOrder ?? Array.Empty<string>();
-            this.members = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+            this.members = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
             if (members == null)
                 return;
 
@@ -64,7 +64,7 @@ namespace CSVParserTool
             }
 
             var order = new List<string>();
-            var values = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            var values = new Dictionary<string, List<string>>(StringComparer.Ordinal);
             for (int rowIndex = headerIndex + 1; rowIndex < rows.Count; rowIndex++)
             {
                 int rowNumber = rowIndex + 1;
@@ -91,7 +91,7 @@ namespace CSVParserTool
                     order.Add(enumName);
                 }
 
-                if (enumValues.Any(existing => string.Equals(existing, value, StringComparison.OrdinalIgnoreCase)))
+                if (enumValues.Any(existing => string.Equals(existing, value, StringComparison.Ordinal)))
                 {
                     throw new InvalidOperationException(
                         $"Enum 관리 XLSX {rowNumber}행: {enumName}.{value} 값이 중복됩니다.");
@@ -100,7 +100,7 @@ namespace CSVParserTool
                 enumValues.Add(value);
             }
 
-            var readOnly = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+            var readOnly = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
             foreach (var pair in values)
                 readOnly[pair.Key] = pair.Value;
             return new EnumCatalog(order, readOnly);
@@ -200,7 +200,7 @@ namespace CSVParserTool
                 return string.Empty;
 
             string canonical = allowedValues.FirstOrDefault(
-                item => string.Equals(item, value.Trim(), StringComparison.OrdinalIgnoreCase));
+                item => string.Equals(item, value.Trim(), StringComparison.Ordinal));
             if (canonical != null)
                 return canonical;
 

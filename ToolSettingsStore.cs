@@ -21,9 +21,15 @@ namespace CSVParserTool
         {
             public string ProjectRootPath = string.Empty;
             public string ExcelSourceFolderPath = string.Empty;
+            public string UnityProjectRootPath = string.Empty;
+            public string UnityExcelSourceFolderPath = string.Empty;
+            public string UnrealProjectRootPath = string.Empty;
+            public string UnrealExcelSourceFolderPath = string.Empty;
             public bool DarkMode;
             public string ThemeName = "Default";
             public string ExportVersion = "1.0.0";
+            public string ExportPlatformName = "Unity";
+            public bool ExportPlatformSelected;
             public bool RemoveOrphanArtifactsOnExport = true;
             public Dictionary<string, int> MiniGameHighScores = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         }
@@ -44,6 +50,39 @@ namespace CSVParserTool
             set { EnsureLoaded(); current.ExcelSourceFolderPath = value ?? string.Empty; }
         }
 
+        public static string GetProjectRootPath(string platformName)
+        {
+            EnsureLoaded();
+            return IsUnreal(platformName)
+                ? current.UnrealProjectRootPath
+                : current.UnityProjectRootPath;
+        }
+
+        public static void SetProjectRootPath(string platformName, string value)
+        {
+            EnsureLoaded();
+            if (IsUnreal(platformName))
+                current.UnrealProjectRootPath = value ?? string.Empty;
+            else
+                current.UnityProjectRootPath = value ?? string.Empty;
+        }
+
+        public static string GetExcelSourceFolderPath(string platformName)
+        {
+            EnsureLoaded();
+            return IsUnreal(platformName)
+                ? current.UnrealExcelSourceFolderPath
+                : current.UnityExcelSourceFolderPath;
+        }
+
+        public static void SetExcelSourceFolderPath(string platformName, string value)
+        {
+            EnsureLoaded();
+            if (IsUnreal(platformName))
+                current.UnrealExcelSourceFolderPath = value ?? string.Empty;
+            else
+                current.UnityExcelSourceFolderPath = value ?? string.Empty;
+        }
         public static bool DarkMode
         {
             get { EnsureLoaded(); return current.DarkMode; }
@@ -55,6 +94,16 @@ namespace CSVParserTool
             set { EnsureLoaded(); current.ThemeName = string.IsNullOrWhiteSpace(value) ? "Default" : value; }
         }
 
+        public static bool ExportPlatformSelected
+        {
+            get { EnsureLoaded(); return current.ExportPlatformSelected; }
+            set { EnsureLoaded(); current.ExportPlatformSelected = value; }
+        }
+        public static string ExportPlatformName
+        {
+            get { EnsureLoaded(); return current.ExportPlatformName; }
+            set { EnsureLoaded(); current.ExportPlatformName = string.IsNullOrWhiteSpace(value) ? "Unity" : value; }
+        }
         public static string ExportVersion
         {
             get { EnsureLoaded(); return current.ExportVersion; }
@@ -168,13 +217,33 @@ namespace CSVParserTool
                 string Read(string name) => document.DocumentElement.SelectSingleNode(name)?.InnerText;
                 string projectRoot = Read("ProjectRootPath");
                 string excelSource = Read("ExcelSourceFolderPath");
+                string unityProjectRoot = Read("UnityProjectRootPath");
+                string unityExcelSource = Read("UnityExcelSourceFolderPath");
+                string unrealProjectRoot = Read("UnrealProjectRootPath");
+                string unrealExcelSource = Read("UnrealExcelSourceFolderPath");
                 string darkMode = Read("DarkMode");
                 string themeName = Read("ThemeName");
                 string exportVersion = Read("ExportVersion");
+                string exportPlatform = Read("ExportPlatform");
+                string exportPlatformSelected = Read("ExportPlatformSelected");
                 string removeOrphans = Read("RemoveOrphanArtifactsOnExport");
                 if (projectRoot == null && excelSource == null && darkMode == null && themeName == null && exportVersion == null && removeOrphans == null)
                     return false;
 
+                bool selectedUnreal = IsUnreal(exportPlatform);
+                if (unityProjectRoot == null && unrealProjectRoot == null)
+                {
+                    if (selectedUnreal)
+                    {
+                        unrealProjectRoot = projectRoot;
+                        unrealExcelSource = excelSource;
+                    }
+                    else
+                    {
+                        unityProjectRoot = projectRoot;
+                        unityExcelSource = excelSource;
+                    }
+                }
                 var miniGameHighScores = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 foreach (XmlNode scoreNode in document.DocumentElement.SelectNodes("MiniGameHighScores/Score"))
                 {
@@ -191,9 +260,17 @@ namespace CSVParserTool
                 {
                     ProjectRootPath = projectRoot ?? string.Empty,
                     ExcelSourceFolderPath = excelSource ?? string.Empty,
+                    UnityProjectRootPath = unityProjectRoot ?? string.Empty,
+                    UnityExcelSourceFolderPath = unityExcelSource ?? string.Empty,
+                    UnrealProjectRootPath = unrealProjectRoot ?? string.Empty,
+                    UnrealExcelSourceFolderPath = unrealExcelSource ?? string.Empty,
                     DarkMode = bool.TryParse(darkMode, out bool dark) && dark,
                     ThemeName = string.IsNullOrWhiteSpace(themeName) ? "Default" : themeName,
                     ExportVersion = string.IsNullOrWhiteSpace(exportVersion) ? "1.0.0" : exportVersion,
+                    ExportPlatformName = string.IsNullOrWhiteSpace(exportPlatform) ? "Unity" : exportPlatform,
+                    ExportPlatformSelected = bool.TryParse(exportPlatformSelected, out bool platformSelected)
+                        ? platformSelected
+                        : exportPlatform != null,
                     RemoveOrphanArtifactsOnExport = !bool.TryParse(removeOrphans, out bool remove) || remove,
                     MiniGameHighScores = miniGameHighScores
                 };
@@ -211,13 +288,19 @@ namespace CSVParserTool
             string temporaryPath = path + ".tmp";
             var document = new XmlDocument { XmlResolver = null };
             XmlElement root = document.CreateElement("DataToolSettings");
-            root.SetAttribute("version", "2");
+            root.SetAttribute("version", "3");
             document.AppendChild(root);
             Append(document, root, "ProjectRootPath", snapshot.ProjectRootPath);
             Append(document, root, "ExcelSourceFolderPath", snapshot.ExcelSourceFolderPath);
+            Append(document, root, "UnityProjectRootPath", snapshot.UnityProjectRootPath);
+            Append(document, root, "UnityExcelSourceFolderPath", snapshot.UnityExcelSourceFolderPath);
+            Append(document, root, "UnrealProjectRootPath", snapshot.UnrealProjectRootPath);
+            Append(document, root, "UnrealExcelSourceFolderPath", snapshot.UnrealExcelSourceFolderPath);
             Append(document, root, "DarkMode", snapshot.DarkMode.ToString());
             Append(document, root, "ThemeName", snapshot.ThemeName);
             Append(document, root, "ExportVersion", snapshot.ExportVersion);
+            Append(document, root, "ExportPlatform", snapshot.ExportPlatformName);
+            Append(document, root, "ExportPlatformSelected", snapshot.ExportPlatformSelected.ToString());
             Append(document, root, "RemoveOrphanArtifactsOnExport", snapshot.RemoveOrphanArtifactsOnExport.ToString());
 
             XmlElement highScores = document.CreateElement("MiniGameHighScores");
@@ -242,6 +325,9 @@ namespace CSVParserTool
             File.Copy(temporaryPath, path, true);
             File.Delete(temporaryPath);
         }
+
+        private static bool IsUnreal(string platformName) =>
+            string.Equals(platformName, "Unreal", StringComparison.OrdinalIgnoreCase);
 
         private static string BuildMiniGameScoreKey(string gameId, string difficultyId)
         {

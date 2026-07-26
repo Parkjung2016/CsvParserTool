@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.WindowsAPICodePack.Dialogs;
 using CSVParserTool.MiniGames;
+using CSVParserTool.Exporting;
 
 namespace CSVParserTool
 {
@@ -82,6 +83,7 @@ namespace CSVParserTool
                 string version = exportVersion;
                 bool removeOrphanArtifacts = Chk_RemoveOrphanArtifacts.Checked;
                 string[] selectedStems = selectedTableStems?.ToArray();
+                ExportPlatform exportPlatform = currentExportPlatform;
 
                 // Open and paint the game before the CPU-heavy export begins. Show() only
                 // creates the window; painting happens after control returns to the message loop.
@@ -94,7 +96,8 @@ namespace CSVParserTool
                     refresh,
                     version,
                     removeOrphanArtifacts,
-                    selectedStems);
+                    selectedStems,
+                    exportPlatform);
                 DataExportResult result = await exportTask;
                 FlushPendingExportLogs();
 
@@ -139,7 +142,8 @@ namespace CSVParserTool
             bool refresh,
             string version,
             bool removeOrphanArtifacts,
-            IReadOnlyCollection<string> selectedTableStems)
+            IReadOnlyCollection<string> selectedTableStems,
+            ExportPlatform exportPlatform)
         {
             return Task.Factory.StartNew(
                 () =>
@@ -163,7 +167,8 @@ namespace CSVParserTool
                         ReportExportProgress,
                         exportVersion: version,
                         removeOrphanArtifacts: removeOrphanArtifacts,
-                        selectedTableStems: selectedTableStems);
+                        selectedTableStems: selectedTableStems,
+                        exportPlatform: exportPlatform);
                 },
                 CancellationToken.None,
                 TaskCreationOptions.LongRunning,

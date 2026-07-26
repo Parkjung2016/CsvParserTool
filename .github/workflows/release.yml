@@ -31,6 +31,10 @@ jobs:
         with:
           dotnet-version: "9.0.x"
 
+      - name: Validate text encoding
+        shell: pwsh
+        run: ./scripts/Test-TextEncoding.ps1
+
       - name: Apply tag version
         shell: pwsh
         run: |

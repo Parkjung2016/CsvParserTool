@@ -82,6 +82,12 @@ namespace CSVParserTool
                 ThemeCard card = cards[i];
                 card.Margin = new Padding(i == 0 ? 0 : 7, 0, i == cards.Length - 1 ? 0 : 7, 0);
                 card.ThemeSelected += (_, theme) => SelectTheme(theme);
+                card.ThemeConfirmed += (_, theme) =>
+                {
+                    SelectTheme(theme);
+                    DialogResult = DialogResult.OK;
+                    Close();
+                };
                 cardLayout.Controls.Add(card, i, 0);
             }
 
@@ -179,6 +185,7 @@ namespace CSVParserTool
 
             public AppTheme Theme { get; }
             public event EventHandler<AppTheme> ThemeSelected;
+            public event EventHandler<AppTheme> ThemeConfirmed;
 
             public bool Selected
             {
@@ -197,6 +204,7 @@ namespace CSVParserTool
                 BackColor = UITheme.Surface;
                 Cursor = Cursors.Hand;
                 Padding = new Padding(10);
+                SetStyle(ControlStyles.StandardClick | ControlStyles.StandardDoubleClick, true);
                 artwork = ThemeArtwork.Load(theme);
 
                 var image = new PictureBox
@@ -235,9 +243,19 @@ namespace CSVParserTool
                 MouseLeave += (_, __) => SetHovered(false);
                 KeyDown += (_, e) =>
                 {
-                    if (e.KeyCode == Keys.Enter || e.KeyCode == Keys.Space)
+                    if (e.KeyCode == Keys.Space)
+                    {
                         ThemeSelected?.Invoke(this, Theme);
+                        e.Handled = true;
+                    }
+                    else if (e.KeyCode == Keys.Enter)
+                    {
+                        ThemeConfirmed?.Invoke(this, Theme);
+                        e.Handled = true;
+                    }
                 };
+                GotFocus += (_, __) => Invalidate();
+                LostFocus += (_, __) => Invalidate();
             }
 
             protected override void Dispose(bool disposing)
@@ -250,7 +268,7 @@ namespace CSVParserTool
             protected override void OnPaint(PaintEventArgs e)
             {
                 base.OnPaint(e);
-                Color border = selected ? UITheme.Accent : hovered ? UITheme.BorderStrong : UITheme.Border;
+                Color border = selected || Focused ? UITheme.Accent : hovered ? UITheme.BorderStrong : UITheme.Border;
                 int width = selected ? 3 : 1;
                 using (var pen = new Pen(border, width))
                     e.Graphics.DrawRectangle(pen, width / 2, width / 2, Width - width, Height - width);
@@ -266,7 +284,12 @@ namespace CSVParserTool
 
             private void WireClick(Control control)
             {
-                control.Click += (_, __) => ThemeSelected?.Invoke(this, Theme);
+                control.Click += (_, __) =>
+                {
+                    Focus();
+                    ThemeSelected?.Invoke(this, Theme);
+                };
+                control.DoubleClick += (_, __) => ThemeConfirmed?.Invoke(this, Theme);
                 control.MouseEnter += (_, __) => SetHovered(true);
                 foreach (Control child in control.Controls)
                     WireClick(child);

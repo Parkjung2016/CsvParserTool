@@ -77,7 +77,7 @@ namespace CSVParserTool
         }
 
         // =========================
-        // GlobalDataContainer ??밴쉐
+        // GlobalDataContainer 생성
         // =========================
 
     }

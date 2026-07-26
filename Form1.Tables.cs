@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using CSVParserTool.Exporting;
 using Microsoft.WindowsAPICodePack.Dialogs;
 
 namespace CSVParserTool
@@ -479,10 +480,17 @@ namespace CSVParserTool
             ReloadDataFileList(quietLog: true);
         }
 
-        private static string BuildPreviewCacheKey(string xlsxPath, string xlsxFolder, string previewExportVersion)
+        private static string BuildPreviewCacheKey(
+            string xlsxPath,
+            string xlsxFolder,
+            string previewExportVersion,
+            ExportPlatform exportPlatform,
+            string projectName)
         {
             var key = new StringBuilder();
-            key.Append(xlsxPath).Append('|').Append(previewExportVersion);
+            key.Append(xlsxPath).Append('|').Append(previewExportVersion)
+                .Append('|').Append(exportPlatform)
+                .Append('|').Append(projectName);
             string folder = !string.IsNullOrWhiteSpace(xlsxFolder) && Directory.Exists(xlsxFolder)
                 ? xlsxFolder
                 : Path.GetDirectoryName(xlsxPath);
@@ -530,7 +538,15 @@ namespace CSVParserTool
 
             string previewFolder = excelSourceFolderPath;
             string previewExportVersion = exportVersion;
-            string cacheKey = BuildPreviewCacheKey(xlsxPath, previewFolder, previewExportVersion);
+            ExportPlatform previewPlatform = currentExportPlatform;
+            string previewProjectName = "Game";
+            if (previewPlatform == ExportPlatform.Unreal
+                && TryGetCurrentTargetLayout(out ExportTargetLayout previewLayout))
+            {
+                previewProjectName = previewLayout.ProjectName;
+            }
+            string cacheKey = BuildPreviewCacheKey(
+                xlsxPath, previewFolder, previewExportVersion, previewPlatform, previewProjectName);
             if (previewCacheByPath.TryGetValue(cacheKey, out string cached))
             {
                 SetPreviewCode(cached);
@@ -555,12 +571,16 @@ namespace CSVParserTool
 
                 string preview = await Task.Run(() =>
                     EnumCatalogService.IsCatalogPath(xlsxPath)
-                        ? EnumCatalogService.GenerateSource(EnumCatalogService.ParseXlsx(xlsxPath))
+                        ? previewPlatform == ExportPlatform.Unreal
+                            ? UnrealCodeGenerator.GenerateEnumHeader(EnumCatalogService.ParseXlsx(xlsxPath))
+                            : EnumCatalogService.GenerateSource(EnumCatalogService.ParseXlsx(xlsxPath))
                         : CsvClassGenerator.GenerateValidatedPreviewFromXlsx(
                             xlsxPath,
                             previewFolder,
                             previewExportVersion,
-                            token), token);
+                            token,
+                            previewPlatform,
+                            previewProjectName), token);
 
                 token.ThrowIfCancellationRequested();
                 if (version != previewRequestVersion)

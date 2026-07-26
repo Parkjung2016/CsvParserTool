@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.WindowsAPICodePack.Taskbar;
+using CSVParserTool.Exporting;
 
 namespace CSVParserTool
 {
@@ -326,6 +327,10 @@ namespace CSVParserTool
         }
         private async void RunStartupDialogs()
         {
+            if (!ToolSettingsStore.ExportPlatformSelected
+                && !ShowEngineSelectionDialog(captureOwner: false))
+                return;
+
             if (ToolSettingsStore.IsFirstRun)
                 ShowFirstRunWelcome();
 
@@ -471,8 +476,9 @@ namespace CSVParserTool
         }
         private void Form1_Load(object sender, EventArgs e)
         {
-            projectRootPath = ToolSettingsStore.ProjectRootPath ?? "";
-            excelSourceFolderPath = ToolSettingsStore.ExcelSourceFolderPath ?? "";
+            string platformName = currentExportPlatform.ToString();
+            projectRootPath = ToolSettingsStore.GetProjectRootPath(platformName) ?? "";
+            excelSourceFolderPath = ToolSettingsStore.GetExcelSourceFolderPath(platformName) ?? "";
             exportVersion = NormalizeExportVersion(ToolSettingsStore.ExportVersion);
 
             UITheme.UpdatePathLabel(Label_ProjectRoot, projectRootPath);

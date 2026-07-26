@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.WindowsAPICodePack.Taskbar;
+using CSVParserTool.Exporting;
 
 namespace CSVParserTool
 {
@@ -159,13 +160,14 @@ namespace CSVParserTool
         }
         private void InitializeInfoButton()
         {
-            tableHeader.ColumnCount = 8;
+            tableHeader.ColumnCount = 9;
             tableHeader.ColumnStyles.Add(new ColumnStyle());
             tableHeader.ColumnStyles.Add(new ColumnStyle());
             tableHeader.ColumnStyles.Add(new ColumnStyle());
             tableHeader.ColumnStyles.Add(new ColumnStyle());
-            tableHeader.SetColumn(Chk_DarkMode, 5);
-            tableHeader.SetColumn(Btn_DataSetting, 7);
+            tableHeader.ColumnStyles.Add(new ColumnStyle());
+            tableHeader.SetColumn(Chk_DarkMode, 6);
+            tableHeader.SetColumn(Btn_DataSetting, 8);
             Btn_DataSetting.Text = "전체 Export";
 
             Btn_Version.Name = "Btn_Version";
@@ -199,6 +201,16 @@ namespace CSVParserTool
             tableHeader.Controls.Add(Btn_Theme, 4, 0);
             tableHeader.SetRowSpan(Btn_Theme, 2);
 
+            Btn_EngineTarget.Name = "Btn_EngineTarget";
+            Btn_EngineTarget.AccessibleName = "Export 엔진 선택";
+            Btn_EngineTarget.Anchor = AnchorStyles.Right;
+            Btn_EngineTarget.AutoSize = true;
+            Btn_EngineTarget.Margin = new Padding(0, 0, 10, 0);
+            Btn_EngineTarget.TabIndex = 2;
+            Btn_EngineTarget.Click += Btn_EngineTarget_Click;
+            tableHeader.Controls.Add(Btn_EngineTarget, 5, 0);
+            tableHeader.SetRowSpan(Btn_EngineTarget, 2);
+
             Btn_ExportSelected.Name = "Btn_ExportSelected";
             Btn_ExportSelected.Text = "선택 Export";
             Btn_ExportSelected.AccessibleName = "체크한 테이블만 Export";
@@ -207,7 +219,7 @@ namespace CSVParserTool
             Btn_ExportSelected.Margin = new Padding(0, 0, 10, 0);
             Btn_ExportSelected.TabIndex = 3;
             Btn_ExportSelected.Click += Btn_ExportSelected_Click;
-            tableHeader.Controls.Add(Btn_ExportSelected, 6, 0);
+            tableHeader.Controls.Add(Btn_ExportSelected, 7, 0);
             tableHeader.SetRowSpan(Btn_ExportSelected, 2);
 
             var listHeaderLayout = new TableLayoutPanel
@@ -310,6 +322,76 @@ namespace CSVParserTool
                 versionDialogOpen = false;
             }
         }
+        private static ExportPlatform ParseExportPlatform(string value) =>
+            Enum.TryParse(value, true, out ExportPlatform platform) ? platform : ExportPlatform.Unity;
+
+        private void UpdateEngineTargetButton()
+        {
+            Btn_EngineTarget.Text = currentExportPlatform == ExportPlatform.Unity
+                ? "Unity  ▾"
+                : "Unreal  ▾";
+            Btn_EngineTarget.AccessibleDescription =
+                $"현재 {EngineExportTargetRegistry.Get(currentExportPlatform).DisplayName} Export 모드";
+            Label_SectionPreview.Text = currentExportPlatform == ExportPlatform.Unreal
+                ? "\uCF54\uB4DC \uBBF8\uB9AC\uBCF4\uAE30 \u00B7 Unreal Header (.h)"
+                : "\uCF54\uB4DC \uBBF8\uB9AC\uBCF4\uAE30 \u00B7 Unity C#";
+        }
+
+        private void Btn_EngineTarget_Click(object sender, EventArgs e) => ShowEngineSelectionDialog(captureOwner: true);
+
+        private bool ShowEngineSelectionDialog(bool captureOwner)
+        {
+            using (var dialog = new EngineSelectionForm(
+                currentExportPlatform,
+                selectionRequired: !ToolSettingsStore.ExportPlatformSelected))
+            {
+                if (Icon != null)
+                    dialog.Icon = (Icon)Icon.Clone();
+                if (ModalBlurBackdrop.ShowDialog(this, dialog, captureOwner) != DialogResult.OK)
+                    return false;
+
+                ApplyExportPlatform(dialog.SelectedPlatform);
+                return true;
+            }
+        }
+
+        private void ApplyExportPlatform(ExportPlatform platform)
+        {
+            currentExportPlatform = platform;
+            string platformName = platform.ToString();
+            ToolSettingsStore.ExportPlatformName = platformName;
+            ToolSettingsStore.ExportPlatformSelected = true;
+
+            projectRootPath = ToolSettingsStore.GetProjectRootPath(platformName) ?? string.Empty;
+            excelSourceFolderPath = ToolSettingsStore.GetExcelSourceFolderPath(platformName) ?? string.Empty;
+            IEngineExportTarget target = EngineExportTargetRegistry.Get(platform);
+
+            UITheme.UpdatePathLabel(
+                Label_ProjectRoot,
+                projectRootPath,
+                $"{target.DisplayName} 프로젝트 경로를 선택하세요");
+            UITheme.UpdatePathLabel(
+                Label_ExcelSourcePath,
+                excelSourceFolderPath,
+                "XLSX 원본 폴더를 선택하세요");
+
+            ToolSettingsStore.Save();
+            UpdateEngineTargetButton();
+            previewCancellation?.Cancel();
+            previewCacheByPath.Clear();
+            currentSelectedXlsxPath = string.Empty;
+            SetPreviewCode(string.Empty);
+            ReloadDataFileList();
+            InitDirectoryWatchers();
+
+            string projectState = string.IsNullOrWhiteSpace(projectRootPath)
+                ? "프로젝트 경로 없음"
+                : projectRootPath;
+            string xlsxState = string.IsNullOrWhiteSpace(excelSourceFolderPath)
+                ? "XLSX 폴더 없음"
+                : excelSourceFolderPath;
+            AddLog($"Export 엔진: {target.DisplayName}\n· 프로젝트: {projectState}\n· XLSX: {xlsxState}", LogLevel.Info);
+        }
         private void Btn_Theme_Click(object sender, EventArgs e)
         {
             using (var dialog = new ThemeSelectionForm(UITheme.CurrentTheme))
@@ -319,12 +401,10 @@ namespace CSVParserTool
                 if (ModalBlurBackdrop.ShowDialog(this, dialog) != DialogResult.OK)
                     return;
 
-                ApplyThemeWithTransition(() =>
-                {
-                    UITheme.SetTheme(dialog.SelectedTheme, Chk_DarkMode.Checked);
-                    ToolSettingsStore.ThemeName = dialog.SelectedTheme.ToString();
-                    ToolSettingsStore.Save();
-                });
+                UITheme.SetTheme(dialog.SelectedTheme, Chk_DarkMode.Checked);
+                ToolSettingsStore.ThemeName = dialog.SelectedTheme.ToString();
+                ToolSettingsStore.Save();
+                ApplyUITheme();
             }
         }
         private void Btn_Info_Click(object sender, EventArgs e)
@@ -412,33 +492,10 @@ namespace CSVParserTool
         private void Chk_DarkMode_CheckedChanged(object sender, EventArgs e)
         {
             bool darkMode = Chk_DarkMode.Checked;
-            ApplyThemeWithTransition(() =>
-            {
-                UITheme.SetTheme(UITheme.ParseTheme(ToolSettingsStore.ThemeName), darkMode);
-                ToolSettingsStore.DarkMode = darkMode;
-                ToolSettingsStore.Save();
-            });
-        }
-
-        private void ApplyThemeWithTransition(Action updateTheme)
-        {
-            Bitmap snapshot = null;
-            if (Visible && IsHandleCreated && SystemInformation.IsMenuAnimationEnabled)
-            {
-                try
-                {
-                    snapshot = ThemeTransitionOverlay.CaptureSnapshot(this);
-                }
-                catch
-                {
-                    snapshot?.Dispose();
-                    snapshot = null;
-                }
-            }
-
-            updateTheme();
+            UITheme.SetTheme(UITheme.ParseTheme(ToolSettingsStore.ThemeName), darkMode);
+            ToolSettingsStore.DarkMode = darkMode;
+            ToolSettingsStore.Save();
             ApplyUITheme();
-            ThemeTransitionOverlay.Show(this, snapshot);
         }
         private void SetPreviewCode(string code)
         {
@@ -532,6 +589,7 @@ namespace CSVParserTool
             UITheme.StyleSecondaryButton(Btn_Info);
             UITheme.StyleSecondaryButton(Btn_Version);
             UITheme.StyleSecondaryButton(Btn_Theme);
+            UITheme.StyleSecondaryButton(Btn_EngineTarget);
             Btn_Info.Font = new Font("Segoe UI Semibold", 11F, FontStyle.Regular, GraphicsUnit.Point);
             Btn_Info.Padding = Padding.Empty;
             Btn_Info.MinimumSize = UITheme.CurrentTheme == AppTheme.Default ? new Size(34, 34) : new Size(40, 40);

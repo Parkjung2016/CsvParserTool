@@ -48,3 +48,11 @@ or code weaving, but are not presented as project-authored software.
 
 No system font files are bundled by this repository; the application only
 requests fonts installed on the user's operating system.
+## Engine trademarks and logos
+
+The following logo files are included only to identify the export target selected by the user:
+
+- `assets/engines/unity.png`
+- `assets/engines/unreal.png`
+
+Unity and the Unity logo are trademarks or registered trademarks of Unity Technologies or its affiliates. Unreal Engine and the Unreal Engine logo are trademarks or registered trademarks of Epic Games, Inc. These logo assets are not covered by this repository's MIT license or the CC BY 4.0 grant in `ASSET_LICENSE.md`. Their use and redistribution remain subject to the respective trademark and brand guidelines. Inclusion does not imply endorsement or affiliation.

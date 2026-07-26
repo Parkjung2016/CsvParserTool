@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using CSVParserTool;
+using CSVParserTool.Exporting;
 
 namespace DataTool.Cli
 {
@@ -41,9 +42,10 @@ namespace DataTool.Cli
         {
             Console.WriteLine("DataTool — CLI (same pipeline as DataToolGUI)");
             Console.WriteLine();
-            Console.WriteLine("  DataTool export --project <dir> [--excel <xlsxSourceDir>] [--refresh-xlsx] [--version 1.0.0] [--no-orphan-cleanup]");
+            Console.WriteLine("  DataTool export --project <dir> [--excel <xlsxSourceDir>] [--refresh-xlsx] [--version 1.0.0] [--no-orphan-cleanup] [--engine unity|unreal]");
             Console.WriteLine();
-            Console.WriteLine("  --project      Unity project root (do NOT select the Assets folder).");
+            Console.WriteLine("  --project      Unity 또는 Unreal 프로젝트 루트.");
+            Console.WriteLine("  --engine       unity 또는 unreal (기본값: unity).");
             Console.WriteLine("  --excel        XLSX source folder (optional; used with --refresh-xlsx).");
             Console.WriteLine("  --refresh-xlsx Run Excel→CSV for all .xlsx in --excel before export.");
             Console.WriteLine("  --version      Export version; columns with version <= this are included (default: all if omitted).");
@@ -88,6 +90,10 @@ namespace DataTool.Cli
             opt.TryGetValue("version", out string exportVersion);
             bool refresh = opt.ContainsKey("refresh-xlsx");
             bool removeOrphanArtifacts = !opt.ContainsKey("no-orphan-cleanup");
+            opt.TryGetValue("engine", out string engine);
+            ExportPlatform platform = string.Equals(engine, "unreal", StringComparison.OrdinalIgnoreCase)
+                ? ExportPlatform.Unreal
+                : ExportPlatform.Unity;
 
             var result = DataExportService.RunExport(
                 project,
@@ -95,7 +101,8 @@ namespace DataTool.Cli
                 refresh,
                 line => Console.WriteLine(line),
                 exportVersion: exportVersion,
-                removeOrphanArtifacts: removeOrphanArtifacts);
+                removeOrphanArtifacts: removeOrphanArtifacts,
+                exportPlatform: platform);
 
             if (!result.Ok)
             {

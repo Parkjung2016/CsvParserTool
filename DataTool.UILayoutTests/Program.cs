@@ -30,6 +30,8 @@ internal static class Program
                 TestSizesAndThemes(form);
                 TestExportResultsResize(form);
                 TestInteractiveResizePerformance(form);
+                TestEngineSelectionDialog(form);
+                TestPerEngineWorkspaceSettings();
             }
         }
         catch (Exception ex) { Fail("Form initialization", ex.GetBaseException().Message); }
@@ -90,6 +92,55 @@ internal static class Program
         if (!split.Panel1Collapsed) Fail("Close export results", "Panel1 was not collapsed."); else Pass("Export results resize/close");
     }
 
+    static void TestPerEngineWorkspaceSettings()
+    {
+        Type store = typeof(Form1).Assembly.GetType("CSVParserTool.ToolSettingsStore", true);
+        MethodInfo setProject = store.GetMethod("SetProjectRootPath", BindingFlags.Static | BindingFlags.Public);
+        MethodInfo getProject = store.GetMethod("GetProjectRootPath", BindingFlags.Static | BindingFlags.Public);
+        MethodInfo setExcel = store.GetMethod("SetExcelSourceFolderPath", BindingFlags.Static | BindingFlags.Public);
+        MethodInfo getExcel = store.GetMethod("GetExcelSourceFolderPath", BindingFlags.Static | BindingFlags.Public);
+
+        setProject.Invoke(null, new object[] { "Unity", "U_PROJECT" });
+        setExcel.Invoke(null, new object[] { "Unity", "U_XLSX" });
+        setProject.Invoke(null, new object[] { "Unreal", "UE_PROJECT" });
+        setExcel.Invoke(null, new object[] { "Unreal", "UE_XLSX" });
+
+        if ((string)getProject.Invoke(null, new object[] { "Unity" }) != "U_PROJECT"
+            || (string)getExcel.Invoke(null, new object[] { "Unity" }) != "U_XLSX"
+            || (string)getProject.Invoke(null, new object[] { "Unreal" }) != "UE_PROJECT"
+            || (string)getExcel.Invoke(null, new object[] { "Unreal" }) != "UE_XLSX")
+            Fail("Per-engine settings", "Unity and Unreal workspace values overlapped.");
+        else
+            Pass("per-engine project/XLSX settings");
+    }
+    static void TestEngineSelectionDialog(Form owner)
+    {
+        Type dialogType = typeof(Form1).Assembly.GetType("CSVParserTool.EngineSelectionForm", true);
+        Type platformType = typeof(DataExportService).Assembly.GetType("CSVParserTool.Exporting.ExportPlatform", true);
+        object unity = Enum.Parse(platformType, "Unity");
+        using (var dialog = (Form)Activator.CreateInstance(
+            dialogType,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+            null,
+            new[] { unity },
+            null))
+        {
+            dialog.StartPosition = FormStartPosition.Manual;
+            dialog.Location = new Point(-30000, -30000);
+            dialog.Show(owner);
+            dialog.PerformLayout();
+            Application.DoEvents();
+            foreach (Control control in Descendants(dialog).Where(control => control.Visible))
+            {
+                if (control.Width <= 0 || control.Height <= 0)
+                    Fail("Engine dialog bounds", control.Name + " " + control.Bounds);
+                if (control.Parent != null && !ContainsWithTolerance(control.Parent.ClientRectangle, control.Bounds, 2))
+                    Fail("Engine dialog clipped", control.GetType().Name + " " + control.Bounds);
+            }
+            dialog.Close();
+        }
+        Pass("engine selection dialog layout");
+    }
     static void TestInteractiveResizePerformance(Form1 form)
     {
         Invoke(form, "OnResizeBegin", EventArgs.Empty);
@@ -111,7 +162,7 @@ internal static class Program
     }
     static void CheckKeyBounds(Form1 form, string state)
     {
-        string[] names = { "Panel_Header", "Panel_Top", "Panel_MainContent", "Panel_Bottom", "Panel_ListCard", "Panel_PreviewCard", "Panel_LogSection", "Btn_DataSetting", "Btn_SelectProjectRoot", "Btn_SelectExcelFolder", "Btn_NewCsv", "Btn_RefreshList" };
+        string[] names = { "Panel_Header", "Panel_Top", "Panel_MainContent", "Panel_Bottom", "Panel_ListCard", "Panel_PreviewCard", "Panel_LogSection", "Btn_DataSetting", "Btn_EngineTarget", "Btn_SelectProjectRoot", "Btn_SelectExcelFolder", "Btn_NewCsv", "Btn_RefreshList" };
         foreach (string name in names)
         {
             Control c = Find(form, name); if (c == null) { Fail("Missing control", name); continue; }

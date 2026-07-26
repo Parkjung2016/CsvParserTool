@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using CSVParserTool;
+using CSVParserTool.Exporting;
 
 public static class CsvClassGenerator
 {
@@ -84,7 +85,9 @@ public static class CsvClassGenerator
         string xlsxPath,
         string xlsxFolder,
         string exportVersion,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ExportPlatform exportPlatform = ExportPlatform.Unity,
+        string projectName = null)
     {
         if (string.IsNullOrWhiteSpace(xlsxPath) || !File.Exists(xlsxPath))
             throw new FileNotFoundException("XLSX not found.", xlsxPath);
@@ -118,8 +121,14 @@ public static class CsvClassGenerator
 
         cancellationToken.ThrowIfCancellationRequested();
         CsvTableParseResult selected = ParsePreviewTableFromXlsx(xlsxPath, 64, options);
+        string enumWorkbook = EnumCatalogService.FindWorkbook(folder);
         if (!selected.ColumnReferences.Any(reference => reference != null))
-            return GenerateTableContainerFile(selected);
+        {
+            var selectedTables = new List<CsvTableParseResult> { selected };
+            if (!string.IsNullOrEmpty(enumWorkbook))
+                EnumCatalogService.ApplyToTables(EnumCatalogService.ParseXlsx(enumWorkbook), selectedTables);
+            return GeneratePreviewSource(selected, exportPlatform, projectName);
+        }
 
         cancellationToken.ThrowIfCancellationRequested();
         selected = ParsePreviewTableFromXlsx(xlsxPath, int.MaxValue, options);
@@ -154,13 +163,20 @@ public static class CsvClassGenerator
         List<CsvTableParseResult> tables = tablesByClass.Values.ToList();
         CrossTableReferenceResolver.Resolve(tables);
 
-        string enumWorkbook = EnumCatalogService.FindWorkbook(folder);
         if (!string.IsNullOrEmpty(enumWorkbook))
             EnumCatalogService.ApplyToTables(EnumCatalogService.ParseXlsx(enumWorkbook), tables);
 
         cancellationToken.ThrowIfCancellationRequested();
-        return GenerateTableContainerFile(selected);
+        return GeneratePreviewSource(selected, exportPlatform, projectName);
     }
+
+    private static string GeneratePreviewSource(
+        CsvTableParseResult table,
+        ExportPlatform exportPlatform,
+        string projectName) =>
+        exportPlatform == ExportPlatform.Unreal
+            ? UnrealCodeGenerator.GenerateRowHeader(table, string.IsNullOrWhiteSpace(projectName) ? "Game" : projectName)
+            : GenerateTableContainerFile(table);
 
     private static CsvParseOptions CreatePreviewParseOptions(string exportVersion) =>
         string.IsNullOrWhiteSpace(exportVersion)

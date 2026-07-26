@@ -21,7 +21,7 @@ namespace CSVParserTool
             sb.AppendLine("    public sealed class GlobalDataContainer");
             sb.AppendLine("    {");
 
-            // ?源???
+            // Singleton
             sb.AppendLine("        private static GlobalDataContainer instance;");
             sb.AppendLine("        public static GlobalDataContainer Instance => instance ??= new GlobalDataContainer();");
             sb.AppendLine();
@@ -36,7 +36,7 @@ namespace CSVParserTool
             sb.AppendLine("        }");
             sb.AppendLine();
 
-            // ?뚢뫂???瑗?
+            // Table containers
             foreach (var name in classNames)
             {
                 sb.AppendLine($"        private {name}Container {ToCamel(name)}Container;");
@@ -44,7 +44,7 @@ namespace CSVParserTool
                 sb.AppendLine();
             }
 
-            // LoadAll ??DataSheetLoader揶쎛 ?귐뗫탣??깅??곗쨮 筌뤴뫀諭?*Container.LoadAsync ?紐꾪뀱
+            // DataSheetLoader가 각 컨테이너의 LoadAsync를 호출한다.
             sb.AppendLine(IfUniTask);
             sb.AppendLine("        public UniTask LoadTablesOnlyAsync() => LoadTablesOnlyAsync(null);");
             sb.AppendLine("        public UniTask LoadTablesOnlyAsync(Action<DataLoadProgressInfo> progress)");
@@ -176,7 +176,7 @@ namespace CSVParserTool
             sb.AppendLine("            return byId.TryGetValue(id, out var row) ? row : null;");
             sb.AppendLine("        }");
             sb.AppendLine();
-            sb.AppendLine("        /// <summary>嚥≪뮆諭??筌뤴뫀諭?????쀫뱜 ??뽮퐣).</summary>");
+            sb.AppendLine("        /// <summary>로드된 모든 테이블 데이터를 반환합니다.</summary>");
             sb.AppendLine("        public IReadOnlyList<T> GetAll() => all;");
             sb.AppendLine();
             sb.AppendLine("        public void Clear()");

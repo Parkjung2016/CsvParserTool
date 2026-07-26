@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -86,7 +86,7 @@ namespace CSVParserTool
             enumMembers[enumName] = members;
             for (int i = enumDeclarationOrder.Count - 1; i >= 0; i--)
             {
-                if (string.Equals(enumDeclarationOrder[i], enumName, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(enumDeclarationOrder[i], enumName, StringComparison.Ordinal))
                     enumDeclarationOrder.RemoveAt(i);
             }
         }

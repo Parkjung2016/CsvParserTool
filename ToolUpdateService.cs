@@ -50,7 +50,7 @@ namespace CSVParserTool
         public static string UpdateDate =>
             typeof(ToolVersionInfo).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
                 .FirstOrDefault(x => string.Equals(x.Key, "UpdateDate", StringComparison.OrdinalIgnoreCase))?.Value
-            ?? "?�인?????�음";
+            ?? "확인할 수 없음";
 
         public static Version ParseVersion(string value)
         {
@@ -63,7 +63,7 @@ namespace CSVParserTool
         }
 
         public static string Format(Version version) =>
-            version == null ? "?????�음" : $"{version.Major}.{version.Minor}.{Math.Max(0, version.Build)}";
+            version == null ? "알 수 없음" : $"{version.Major}.{version.Minor}.{Math.Max(0, version.Build)}";
 
         public static bool IsNewerThanInstalled(Version candidate) =>
             candidate != null && candidate.CompareTo(Version) > 0;
@@ -95,7 +95,7 @@ namespace CSVParserTool
                 {
                     Version = ToolVersionInfo.Version,
                     VersionText = ToolVersionInfo.VersionText,
-                    PublishedAt = "개발 ?�행",
+                    PublishedAt = "개발 실행",
                     NotesUrl = ToolVersionInfo.RepositoryUrl,
                     AssetName = string.Empty,
                     IsNewer = false
@@ -131,7 +131,7 @@ namespace CSVParserTool
                 }
                 catch when (cachedUpdate != null)
                 {
-                    // ?�시?�인 ?�트?�크 ?�류가 ?�어??마�?막으�??�인??버전 ?�보??계속 보여준??
+                    // 일시적인 네트워크 오류가 있어도 마지막으로 확인한 버전 정보를 계속 보여준다.
                     return cachedUpdate;
                 }
             }
@@ -186,7 +186,7 @@ namespace CSVParserTool
                 {
                     Version = version,
                     VersionText = ToolVersionInfo.Format(version),
-                    PublishedAt = root.SelectSingleNode("PublishedAt")?.InnerText ?? "?�인?????�음",
+                    PublishedAt = root.SelectSingleNode("PublishedAt")?.InnerText ?? "확인할 수 없음",
                     NotesUrl = notesUrl,
                     DownloadUrl = ToolVersionInfo.RepositoryUrl
                         + "/releases/download/" + Uri.EscapeDataString(tag)
@@ -198,7 +198,7 @@ namespace CSVParserTool
             }
             catch
             {
-                // 캐시???�택 ?�항?��?�??�상?�었거나 ?�을 ???�으�??�라???�인?�로 진행?�다.
+                // 캐시가 선택 사항이므로 손상되었거나 읽을 수 없으면 온라인 확인으로 진행한다.
             }
         }
 
@@ -234,7 +234,7 @@ namespace CSVParserTool
             }
             catch
             {
-                // ?�기 권한???�어???�재 ?�행 중의 메모�?캐시??계속 ?�용?�다.
+                // 쓰기 권한이 없어도 현재 실행 중인 메모리 캐시는 계속 사용한다.
             }
         }
 
@@ -269,18 +269,18 @@ namespace CSVParserTool
             namespaces.AddNamespace("atom", "http://www.w3.org/2005/Atom");
             XmlNode entry = document.SelectSingleNode("/atom:feed/atom:entry", namespaces);
             if (entry == null)
-                throw new InvalidOperationException("?�직 배포???�데?�트가 ?�습?�다. ?�재 ?�치??버전??계속 ?�용?????�습?�다.");
+                throw new InvalidOperationException("아직 배포된 업데이트가 없습니다. 현재 설치된 버전을 계속 사용할 수 있습니다.");
 
             var link = entry.SelectSingleNode("atom:link[@rel='alternate']", namespaces) as XmlElement;
             string notesUrl = link?.GetAttribute("href");
             if (!Uri.TryCreate(notesUrl, UriKind.Absolute, out Uri releaseUri)
                 || !IsAllowedGitHubUrl(notesUrl))
-                throw new InvalidDataException("GitHub Release 주소�??�을 ???�습?�다.");
+                throw new InvalidDataException("GitHub Release 주소를 읽을 수 없습니다.");
 
             string tag = Uri.UnescapeDataString(releaseUri.Segments.LastOrDefault()?.Trim('/') ?? string.Empty);
             Version version = ToolVersionInfo.ParseVersion(tag);
             if (version == null)
-                throw new InvalidDataException("GitHub Release??버전 ?�그�??�을 ???�습?�다.");
+                throw new InvalidDataException("GitHub Release의 버전 태그를 읽을 수 없습니다.");
 
             string updated = entry.SelectSingleNode("atom:updated", namespaces)?.InnerText;
             string downloadUrl = ToolVersionInfo.RepositoryUrl
@@ -306,9 +306,9 @@ namespace CSVParserTool
             EnsureUpdatesAllowed();
 
             if (update == null || !update.IsNewer)
-                throw new InvalidOperationException("?�치????버전???�습?�다.");
+                throw new InvalidOperationException("설치할 새 버전이 없습니다.");
             if (!IsAllowedGitHubUrl(update.DownloadUrl))
-                throw new InvalidOperationException("??Release???�데?�트 ZIP???�습?�다.");
+                throw new InvalidOperationException("이 Release에는 업데이트 ZIP이 없습니다.");
 
             string root = Path.Combine(Path.GetTempPath(), "PJDevDataToolUpdate", Guid.NewGuid().ToString("N"));
             string zipPath = Path.Combine(root, "update.zip");
@@ -341,14 +341,14 @@ namespace CSVParserTool
                 ExtractSecurely(zipPath, payloadPath);
                 string payloadExe = Path.Combine(payloadPath, Path.GetFileName(Application.ExecutablePath));
                 if (!File.Exists(payloadExe))
-                    throw new InvalidDataException("?�데?�트 ZIP??DataToolGUI.exe가 ?�습?�다.");
+                    throw new InvalidDataException("업데이트 ZIP에 DataToolGUI.exe가 없습니다.");
 
                 Version payloadVersion = ToolVersionInfo.ParseVersion(
                     AssemblyName.GetAssemblyName(payloadExe).Version.ToString());
                 if (payloadVersion == null || payloadVersion != update.Version)
                 {
                     throw new InvalidDataException(
-                        $"?�데?�트 ZIP???�행 ?�일 버전???�바르�? ?�습?�다. ?�청: v{update.VersionText}, ?�일: v{ToolVersionInfo.Format(payloadVersion)}");
+                        $"업데이트 ZIP의 실행 파일 버전이 올바르지 않습니다. 요청: v{update.VersionText}, 파일: v{ToolVersionInfo.Format(payloadVersion)}");
                 }
 
                 progress?.Report(100);
@@ -369,7 +369,7 @@ namespace CSVParserTool
             string executableName = Path.GetFileName(sourceExe);
             string downloadedExe = Path.Combine(payloadPath, executableName);
             if (!File.Exists(downloadedExe))
-                throw new FileNotFoundException("?�운로드???�데?�트 ?�행 ?�일??찾을 ???�습?�다.", downloadedExe);
+                throw new FileNotFoundException("다운로드한 업데이트 실행 파일을 찾을 수 없습니다.", downloadedExe);
             string updaterExe = Path.Combine(Path.GetDirectoryName(payloadPath), "PJDevDataToolUpdater.exe");
             File.Copy(downloadedExe, updaterExe, true);
 
@@ -394,7 +394,7 @@ namespace CSVParserTool
         private static void EnsureUpdatesAllowed()
         {
             if (!ToolRuntimeEnvironment.UpdatesAllowed)
-                throw new InvalidOperationException("개발 ?�행?�서???�데?�트�??�운로드?�거???�치?????�습?�다.");
+                throw new InvalidOperationException("개발 실행에서는 업데이트를 다운로드하거나 설치할 수 없습니다.");
         }
         public static bool TryRunInstallerMode(string[] args)
         {
@@ -410,7 +410,7 @@ namespace CSVParserTool
                         using (Process runningTool = Process.GetProcessById(processId))
                         {
                             if (!runningTool.WaitForExit(60000))
-                                throw new IOException("기존 Data Tool??종료?��? ?�아 ?�데?�트�??�용?????�습?�다.");
+                                throw new IOException("기존 Data Tool이 종료되지 않아 업데이트를 적용할 수 없습니다.");
                         }
                     }
                     catch (ArgumentException) { }
@@ -421,7 +421,7 @@ namespace CSVParserTool
                 string executableName = Path.GetFileName(args[4]);
                 Version expectedVersion = ToolVersionInfo.ParseVersion(args[5]);
                 if (!Directory.Exists(payloadPath) || string.IsNullOrWhiteSpace(executableName) || expectedVersion == null)
-                    throw new InvalidDataException("?�데?�트 ?�일 ?�치 ?�는 버전???�바르�? ?�습?�다.");
+                    throw new InvalidDataException("업데이트 파일 위치 또는 버전이 올바르지 않습니다.");
 
                 CopyDirectoryWithRetry(payloadPath, installPath);
                 string installedExe = Path.Combine(installPath, executableName);
@@ -430,7 +430,7 @@ namespace CSVParserTool
                 if (installedVersion == null || installedVersion != expectedVersion)
                 {
                     throw new InvalidDataException(
-                        $"?�데?�트 ?�용 ??버전 검증에 ?�패?�습?�다. ?�상: v{ToolVersionInfo.Format(expectedVersion)}, ?�치: v{ToolVersionInfo.Format(installedVersion)}");
+                        $"업데이트 적용 후 버전 검증에 실패했습니다. 예상: v{ToolVersionInfo.Format(expectedVersion)}, 설치: v{ToolVersionInfo.Format(installedVersion)}");
                 }
 
                 Process.Start(new ProcessStartInfo
@@ -444,8 +444,8 @@ namespace CSVParserTool
             catch (Exception ex)
             {
                 MessageBox.Show(
-                    "?�데?�트�??�용?��? 못했?�니??\r\n\r\n" + ex.Message,
-                    "PJDev Data Tool ?�데?�트",
+                    "업데이트를 적용하지 못했습니다.\r\n\r\n" + ex.Message,
+                    "PJDev Data Tool 업데이트",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
@@ -469,7 +469,7 @@ namespace CSVParserTool
                 {
                     string target = Path.GetFullPath(Path.Combine(destination, entry.FullName));
                     if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidDataException("?�데?�트 ZIP???�전?��? ?��? 경로가 ?�습?�다.");
+                        throw new InvalidDataException("업데이트 ZIP에 안전하지 않은 경로가 있습니다.");
                     if (string.IsNullOrEmpty(entry.Name))
                     {
                         Directory.CreateDirectory(target);
@@ -504,7 +504,7 @@ namespace CSVParserTool
             }
 
             throw new IOException(
-                "?�데?�트 ?�일???�치 ?�더??복사?��? 못했?�니?? ?�행 중인 Data Tool??모두 ?�고 ?�시 ?�도?�세??",
+                "업데이트 파일을 설치 폴더로 복사하지 못했습니다. 실행 중인 Data Tool을 모두 닫고 다시 시도하세요.",
                 lastError);
         }
         private static void CopyDirectory(string source, string destination)
@@ -514,7 +514,7 @@ namespace CSVParserTool
             {
                 string full = Path.GetFullPath(file);
                 if (!full.StartsWith(sourceRoot, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("?�데?�트 ?�일 경로가 ?�바르�? ?�습?�다.");
+                    throw new InvalidDataException("업데이트 파일 경로가 올바르지 않습니다.");
                 string relative = full.Substring(sourceRoot.Length);
                 string target = Path.Combine(destination, relative);
                 Directory.CreateDirectory(Path.GetDirectoryName(target));
@@ -535,7 +535,7 @@ namespace CSVParserTool
         private static string FormatPublishedAt(string value) =>
             DateTimeOffset.TryParse(value, out DateTimeOffset parsed)
                 ? parsed.ToLocalTime().ToString("yyyy-MM-dd")
-                : "?�인?????�음";
+                : "확인할 수 없음";
 
         private static string Quote(string value) => "\"" + (value ?? string.Empty).Replace("\"", "\\\"") + "\"";
 

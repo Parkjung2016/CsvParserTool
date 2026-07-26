@@ -61,8 +61,8 @@ namespace CSVParserTool
             sb.AppendLine("        void ClearLoadedData();");
             sb.AppendLine("    }");
             sb.AppendLine(); sb.AppendLine("    /// <summary>");
-            sb.AppendLine("    /// ??쀫뱜 ?癒?궚(<see cref=\"DataContainerBase{T}\"/>)??Addressables嚥?嚥≪뮆諭????揶쎛?⑤벏鍮??덈뼄.");
-            sb.AppendLine("    /// Unity?癒?퐣 <c>InfoStorageBase&lt;T&gt;</c>???怨몃꺗??揶쎛??嚥≪뮇彛???臾믨쉐??뤾쉭??");
+            sb.AppendLine("    /// 테이블 컨테이너(<see cref=\"DataContainerBase{T}\"/>)에서 로드된 데이터를 조회하기 위한 저장소입니다.");
+            sb.AppendLine("    /// 필요한 경우 <c>InfoStorageBase&lt;T&gt;</c>를 상속해 조회 구조를 확장할 수 있습니다.");
             sb.AppendLine("    /// </summary>");
             sb.AppendLine("    public abstract class InfoStorageBase<T> : IInfoStorage<T>, IClearableInfoStorage");
             sb.AppendLine("        where T : class");
@@ -170,7 +170,7 @@ namespace CSVParserTool
             sb.AppendLine(EndIf);
             sb.AppendLine("    }");
             sb.AppendLine();
-            sb.AppendLine("    /// <summary>??삘뀲 ??곷띺뇡遺얄봺?癒?퐣 <see cref=\"IInfoStorage\"/>???源낆쨯夷뚩?怨좎돳夷??⑦겣 嚥≪뮆諭??몃빍??</summary>");
+            sb.AppendLine("    /// <summary>등록된 모든 <see cref=\"IInfoStorage\"/> 인스턴스를 일괄 로드하고 초기화합니다.</summary>");
             sb.AppendLine("    public static class InfoStorageRegistry");
             sb.AppendLine("    {");
             sb.AppendLine("        private static readonly List<IInfoStorage> storages = new List<IInfoStorage>();");

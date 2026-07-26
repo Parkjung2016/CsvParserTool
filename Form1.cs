@@ -14,6 +14,7 @@ using System.Windows.Forms;
 using Microsoft.WindowsAPICodePack.Dialogs;
 using Microsoft.WindowsAPICodePack.Taskbar;
 using CSVParserTool.MiniGames;
+using CSVParserTool.Exporting;
 
 namespace CSVParserTool
 {
@@ -32,6 +33,7 @@ namespace CSVParserTool
         private readonly Button Btn_Info = new Button();
         private readonly Button Btn_Version = new Button();
         private readonly Button Btn_Theme = new Button();
+        private readonly Button Btn_EngineTarget = new Button();
         private readonly Button Btn_ExportSelected = new Button();
         private readonly Button Btn_EnumCatalog = new Button();
         private readonly Button Btn_CheckAll = new Button();
@@ -57,18 +59,41 @@ namespace CSVParserTool
         private string projectRootPath = "";
         private string excelSourceFolderPath = "";
         private string exportVersion = "1.0.0";
+        private ExportPlatform currentExportPlatform = ExportPlatform.Unity;
         private string lastWarnedInvalidExportVersion = string.Empty;
 
+        private bool TryGetCurrentTargetLayout(out ExportTargetLayout layout)
+        {
+            layout = null;
+            if (string.IsNullOrWhiteSpace(projectRootPath) || !Directory.Exists(projectRootPath))
+                return false;
+            try
+            {
+                layout = EngineExportTargetRegistry.Get(currentExportPlatform).CreateLayout(projectRootPath);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private string dataCsvDir =>
-            string.IsNullOrWhiteSpace(projectRootPath)
-                ? string.Empty
-                : DataProjectPaths.DataCsvDir(projectRootPath);
+            TryGetCurrentTargetLayout(out ExportTargetLayout layout)
+                ? layout.StagingCsvDirectory
+                : string.Empty;
 
-        private string gameDatasDir =>
-            string.IsNullOrWhiteSpace(projectRootPath)
-                ? string.Empty
-                : DataProjectPaths.GameDatasDir(projectRootPath);
-
+        private string gameDatasDir
+        {
+            get
+            {
+                if (!TryGetCurrentTargetLayout(out ExportTargetLayout layout))
+                    return string.Empty;
+                return currentExportPlatform == ExportPlatform.Unity
+                    ? Path.GetDirectoryName(layout.StagingCsvDirectory)
+                    : Path.GetDirectoryName(layout.StagingCsvDirectory);
+            }
+        }
         private FileSystemWatcher excelDirWatcher;
         private System.Windows.Forms.Timer listReloadDebounceTimer;
 
@@ -109,6 +134,8 @@ namespace CSVParserTool
             InitializeExportResultControls();
             InitializeLogHeaderLayout();
             InitializeInfoButton();
+            currentExportPlatform = ParseExportPlatform(ToolSettingsStore.ExportPlatformName);
+            UpdateEngineTargetButton();
             exportLogFlushTimer.Tick += (_, __) => FlushPendingExportLogs();
 
             bool darkMode = ToolSettingsStore.DarkMode;

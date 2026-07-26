@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.WindowsAPICodePack.Dialogs;
+using CSVParserTool.Exporting;
 
 namespace CSVParserTool
 {
@@ -41,12 +42,25 @@ namespace CSVParserTool
             using (var cfd = new CommonOpenFileDialog())
             {
                 cfd.IsFolderPicker = true;
+                IEngineExportTarget target = EngineExportTargetRegistry.Get(currentExportPlatform);
+                cfd.Title = target.DisplayName + " 프로젝트 루트 선택";
                 SetFolderDialogInitialPath(cfd, projectRootPath);
 
                 if (cfd.ShowDialog() == CommonFileDialogResult.Ok)
                 {
+                    try
+                    {
+                        target.ValidateProject(cfd.FileName);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(this, ex.Message, target.DisplayName + " 프로젝트 확인", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+
                     projectRootPath = cfd.FileName;
 
+                    ToolSettingsStore.SetProjectRootPath(currentExportPlatform.ToString(), projectRootPath);
                     ToolSettingsStore.ProjectRootPath = projectRootPath;
                     ToolSettingsStore.Save();
 
@@ -74,6 +88,7 @@ namespace CSVParserTool
                     excelSourceFolderPath = cfd.FileName;
                     UITheme.UpdatePathLabel(Label_ExcelSourcePath, excelSourceFolderPath);
 
+                    ToolSettingsStore.SetExcelSourceFolderPath(currentExportPlatform.ToString(), excelSourceFolderPath);
                     ToolSettingsStore.ExcelSourceFolderPath = excelSourceFolderPath;
                     ToolSettingsStore.Save();
 
@@ -215,7 +230,7 @@ namespace CSVParserTool
                 return;
             }
 
-            TryOpenFolderInExplorer(gameDatasDir, "Assets\\_Game\\DataTables", (m, l) => AddLog(m, l));
+            TryOpenFolderInExplorer(gameDatasDir, currentExportPlatform == ExportPlatform.Unity ? "Assets\\_Game\\DataTables" : "Content\\PJDevData\\DataTables", (m, l) => AddLog(m, l));
         }
 
         private void Btn_OpenXlsxFolder_Click(object sender, EventArgs e)
