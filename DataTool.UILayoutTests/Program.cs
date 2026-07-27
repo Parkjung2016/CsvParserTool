@@ -31,6 +31,7 @@ internal static class Program
                 TestExportResultsResize(form);
                 TestInteractiveResizePerformance(form);
                 TestEngineSelectionDialog(form);
+                TestInfoDialogs(form);
                 TestPerEngineWorkspaceSettings();
             }
         }
@@ -92,6 +93,57 @@ internal static class Program
         if (!split.Panel1Collapsed) Fail("Close export results", "Panel1 was not collapsed."); else Pass("Export results resize/close");
     }
 
+    static void TestInfoDialogs(Form owner)
+    {
+        Type dialogType = typeof(Form1).Assembly.GetType("CSVParserTool.ToolInfoForm", true);
+        Type platformType = typeof(DataExportService).Assembly.GetType("CSVParserTool.Exporting.ExportPlatform", true);
+        foreach (string platformName in new[] { "Unity", "Unreal" })
+        {
+            object platform = Enum.Parse(platformType, platformName);
+            using (var dialog = (Form)Activator.CreateInstance(
+                dialogType,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                null,
+                new[] { platform },
+                null))
+            {
+                dialog.StartPosition = FormStartPosition.Manual;
+                dialog.Location = new Point(-30000, -30000);
+                dialog.Show(owner);
+                dialog.PerformLayout();
+                Application.DoEvents();
+
+                string expectedEngine = platformName == "Unreal" ? "Unreal Engine" : "Unity";
+                if (!Descendants(dialog).OfType<Label>().Any(label => label.Text.Contains(expectedEngine)))
+                    Fail("Info engine subtitle", expectedEngine);
+
+                Button codeButton = Descendants(dialog).OfType<Button>().FirstOrDefault(button => button.Text == "코드 사용");
+                Button cliButton = Descendants(dialog).OfType<Button>().FirstOrDefault(button => button.Text == "CLI");
+                if (codeButton == null || cliButton == null)
+                {
+                    Fail("Info navigation", platformName);
+                    continue;
+                }
+
+                codeButton.PerformClick();
+                Application.DoEvents();
+                string codeText = string.Join("\n", Descendants(dialog).Select(control => control.Text));
+                if (platformName == "Unity" && !codeText.Contains("GlobalDataContainer"))
+                    Fail("Unity code guide", "GlobalDataContainer example missing");
+                if (platformName == "Unreal" && !codeText.Contains("UGlobalDataStorage"))
+                    Fail("Unreal code guide", "UGlobalDataStorage example missing");
+
+                cliButton.PerformClick();
+                Application.DoEvents();
+                string cliText = string.Join("\n", Descendants(dialog).Select(control => control.Text));
+                string expectedSwitch = platformName == "Unreal" ? "--engine unreal" : "--engine unity";
+                if (!cliText.Contains(expectedSwitch))
+                    Fail("Info CLI guide", expectedSwitch + " missing");
+                dialog.Close();
+            }
+        }
+        Pass("engine-specific Info/code/CLI guides");
+    }
     static void TestPerEngineWorkspaceSettings()
     {
         Type store = typeof(Form1).Assembly.GetType("CSVParserTool.ToolSettingsStore", true);

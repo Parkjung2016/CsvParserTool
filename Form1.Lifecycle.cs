@@ -363,7 +363,7 @@ namespace CSVParserTool
                     return;
             }
 
-            using (var guide = new ToolInfoForm())
+            using (var guide = new ToolInfoForm(currentExportPlatform))
             {
                 if (Icon != null)
                     guide.Icon = (Icon)Icon.Clone();

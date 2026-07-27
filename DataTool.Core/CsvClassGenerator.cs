@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -122,12 +122,17 @@ public static class CsvClassGenerator
         cancellationToken.ThrowIfCancellationRequested();
         CsvTableParseResult selected = ParsePreviewTableFromXlsx(xlsxPath, 64, options);
         string enumWorkbook = EnumCatalogService.FindWorkbook(folder);
+        EnumCatalog enumCatalog = string.IsNullOrEmpty(enumWorkbook)
+            ? null
+            : EnumCatalogService.ParseXlsx(enumWorkbook);
         if (!selected.ColumnReferences.Any(reference => reference != null))
         {
             var selectedTables = new List<CsvTableParseResult> { selected };
-            if (!string.IsNullOrEmpty(enumWorkbook))
-                EnumCatalogService.ApplyToTables(EnumCatalogService.ParseXlsx(enumWorkbook), selectedTables);
-            return GeneratePreviewSource(selected, exportPlatform, projectName);
+            if (enumCatalog != null)
+                EnumCatalogService.ApplyToTables(enumCatalog, selectedTables);
+            if (exportPlatform == ExportPlatform.Unreal)
+                UnrealCodeGenerator.ValidateForExport(enumCatalog, selectedTables);
+            return GeneratePreviewSource(selected, exportPlatform, projectName, enumCatalog);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -163,19 +168,27 @@ public static class CsvClassGenerator
         List<CsvTableParseResult> tables = tablesByClass.Values.ToList();
         CrossTableReferenceResolver.Resolve(tables);
 
-        if (!string.IsNullOrEmpty(enumWorkbook))
-            EnumCatalogService.ApplyToTables(EnumCatalogService.ParseXlsx(enumWorkbook), tables);
+        if (enumCatalog != null)
+            EnumCatalogService.ApplyToTables(enumCatalog, tables);
+        if (exportPlatform == ExportPlatform.Unreal)
+            UnrealCodeGenerator.ValidateForExport(enumCatalog, tables);
 
         cancellationToken.ThrowIfCancellationRequested();
-        return GeneratePreviewSource(selected, exportPlatform, projectName);
+        return GeneratePreviewSource(selected, exportPlatform, projectName, enumCatalog);
     }
 
     private static string GeneratePreviewSource(
         CsvTableParseResult table,
         ExportPlatform exportPlatform,
-        string projectName) =>
+        string projectName,
+        EnumCatalog enumCatalog) =>
         exportPlatform == ExportPlatform.Unreal
-            ? UnrealCodeGenerator.GenerateRowHeader(table, string.IsNullOrWhiteSpace(projectName) ? "Game" : projectName)
+            ? UnrealCodeGenerator.GenerateRowHeader(
+                table,
+                string.IsNullOrWhiteSpace(projectName) ? "Game" : projectName,
+                UnrealCodeGenerator.CreateEnumTypeNameMap(
+                    (enumCatalog?.DeclarationOrder ?? Array.Empty<string>())
+                        .Concat(table.EnumMembers.Keys)))
             : GenerateTableContainerFile(table);
 
     private static CsvParseOptions CreatePreviewParseOptions(string exportVersion) =>

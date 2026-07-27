@@ -409,7 +409,7 @@ namespace CSVParserTool
         }
         private void Btn_Info_Click(object sender, EventArgs e)
         {
-            using (var dialog = new ToolInfoForm())
+            using (var dialog = new ToolInfoForm(currentExportPlatform))
             {
                 if (Icon != null)
                     dialog.Icon = (Icon)Icon.Clone();

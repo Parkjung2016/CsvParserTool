@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -25,9 +25,9 @@ internal static class Program
         Check("Repeated XLSX preview uses cache", RepeatedPreviewUsesCache);
         Check("Unity and Unreal targets resolve stable layouts", EngineTargetLayouts);
         Check("Unreal row header maps common types", UnrealRowHeaderGeneration);
-        Check("Unreal export writes C++ and import artifacts", UnrealExportArtifacts);
+        Check("Unreal export writes C++ without intermediate files", UnrealExportArtifacts);
         Check("Unreal XLSX preview uses the export header generator", UnrealXlsxPreview);
-        Check("Enum names and values are case-sensitive", EnumCatalogIsCaseSensitive);
+        Check("Enum catalog is case-sensitive and Unreal collisions fail", EnumCatalogIsCaseSensitive);
         Console.WriteLine(failures == 0 ? "PASS" : $"FAIL ({failures})");
         return failures == 0 ? 0 : 1;
     }
@@ -36,6 +36,18 @@ internal static class Program
     {
         try { test(); Console.WriteLine($"[OK] {name}"); }
         catch (Exception ex) { failures++; Console.WriteLine($"[ERROR] {name}: {ex.GetBaseException().Message}"); }
+    }
+
+    private static void CreateUnrealProject(string root, string projectName, string moduleName)
+    {
+        string moduleRoot = Path.Combine(root, "Source", moduleName);
+        Directory.CreateDirectory(moduleRoot);
+        File.WriteAllText(Path.Combine(moduleRoot, moduleName + ".Build.cs"), "// test module");
+        File.WriteAllText(
+            Path.Combine(root, projectName + ".uproject"),
+            "{\"FileVersion\":3,\"Modules\":[{\"Name\":\"" + moduleName
+            + "\",\"Type\":\"Runtime\",\"LoadingPhase\":\"Default\"}]}"
+        );
     }
 
     private static void EngineTargetLayouts()
@@ -47,8 +59,7 @@ internal static class Program
         {
             Directory.CreateDirectory(Path.Combine(unityRoot, "Assets"));
             Directory.CreateDirectory(Path.Combine(unityRoot, "ProjectSettings"));
-            Directory.CreateDirectory(unrealRoot);
-            File.WriteAllText(Path.Combine(unrealRoot, "ProjectR.uproject"), "{}");
+            CreateUnrealProject(unrealRoot, "ProjectR", "GameplayCore");
 
             IEngineExportTarget unity = EngineExportTargetRegistry.Detect(unityRoot);
             IEngineExportTarget unreal = EngineExportTargetRegistry.Detect(unrealRoot);
@@ -56,9 +67,13 @@ internal static class Program
                 throw new InvalidOperationException("Engine target detection mismatch.");
 
             ExportTargetLayout unrealLayout = unreal.CreateLayout(unrealRoot);
-            if (unrealLayout.ProjectName != "ProjectR" ||
-                !unrealLayout.GeneratedCodeDirectory.EndsWith(
-                    Path.Combine("Source", "ProjectR", "DataTables", "Generated"),
+            if (unrealLayout.ProjectName != "ProjectR"
+                || unrealLayout.ModuleName != "GameplayCore"
+                || !unrealLayout.GeneratedCodeDirectory.EndsWith(
+                    Path.Combine("Source", "GameplayCore", "Public", "DataTables", "Generated"),
+                    StringComparison.OrdinalIgnoreCase)
+                || !unrealLayout.StagingCsvDirectory.EndsWith(
+                    Path.Combine("Saved", "PJDevDataTool", "Source", "CSV"),
                     StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Unreal layout mismatch: " + unrealLayout.GeneratedCodeDirectory);
         }
@@ -73,39 +88,108 @@ internal static class Program
         string root = Path.Combine(Path.GetTempPath(), "DataToolUnrealExport_" + Guid.NewGuid().ToString("N"));
         try
         {
-            Directory.CreateDirectory(root);
-            File.WriteAllText(Path.Combine(root, "ProjectR.uproject"), "{}");
+            CreateUnrealProject(root, "ProjectR", "GameplayCore");
             ExportTargetLayout layout = EngineExportTargetRegistry.Get(ExportPlatform.Unreal).CreateLayout(root);
             Directory.CreateDirectory(layout.StagingCsvDirectory);
+            string excelRoot = Path.Combine(root, "Excel");
+            Directory.CreateDirectory(excelRoot);
+            using (var enumWorkbook = new XLWorkbook())
+            {
+                IXLWorksheet enumSheet = enumWorkbook.AddWorksheet("Enums");
+                enumSheet.Cell(1, 1).Value = "EnumName";
+                enumSheet.Cell(1, 2).Value = "Value";
+                enumSheet.Cell(2, 1).Value = "Test";
+                enumSheet.Cell(2, 2).Value = "Value";
+                enumSheet.Cell(3, 1).Value = "Other";
+                enumSheet.Cell(3, 2).Value = "Value";
+                enumWorkbook.SaveAs(Path.Combine(excelRoot, EnumCatalogService.WorkbookFileName));
+            }
+            using (var tableWorkbook = new XLWorkbook())
+            {
+                IXLWorksheet tableSheet = tableWorkbook.AddWorksheet("Data");
+                tableSheet.Cell(1, 1).Value = "Id";
+                tableSheet.Cell(1, 2).Value = "Mode";
+                tableSheet.Cell(2, 1).Value = "1.0.0";
+                tableSheet.Cell(2, 2).Value = "1.0.0";
+                tableSheet.Cell(3, 1).Value = "int";
+                tableSheet.Cell(3, 2).Value = "enum:Test";
+                tableSheet.Cell(4, 1).Value = 1;
+                tableSheet.Cell(4, 2).Value = "Value";
+                tableWorkbook.SaveAs(Path.Combine(excelRoot, "DT_Character.xlsx"));
+            }
             File.WriteAllLines(
                 Path.Combine(layout.StagingCsvDirectory, "DT_Character.csv"),
                 new[]
                 {
-                    "Id,Name,Speeds",
-                    "1.0.0,1.0.0,1.0.0",
-                    "int,string,float[]",
-                    "1,Warrior,1.0|2.0"
+                    "Id,Mode",
+                    "1.0.0,1.0.0",
+                    "int,enum:Test",
+                    "1,Value"
                 });
 
             DataExportResult result = DataExportService.RunExport(
                 root,
-                null,
+                excelRoot,
                 false,
                 null,
                 exportVersion: "1.0.0",
-                exportPlatform: ExportPlatform.Unreal);
+                exportPlatform: ExportPlatform.Unreal,
+                autoImportUnrealDataTables: false);
             if (!result.Ok)
                 throw new InvalidOperationException(result.ErrorMessage);
+            if (result.FailedCount > 0)
+            {
+                throw new InvalidOperationException(string.Join(
+                    " | ", result.TableResults.Select(item => item.SourceFileName + ": " + item.ErrorMessage)));
+            }
 
             string header = Path.Combine(layout.GeneratedCodeDirectory, "CharacterRow.h");
             string enums = Path.Combine(layout.GeneratedCodeDirectory, "DataEnums.h");
-            string manifest = Path.Combine(layout.RuntimeDataDirectory, "DataToolImportManifest.json");
-            if (!File.Exists(header) || !File.Exists(enums) || !File.Exists(manifest))
-                throw new InvalidOperationException("Unreal export artifact is missing.");
+            string storageHeader = Path.Combine(layout.GeneratedCodeDirectory, "GlobalDataStorage.h");
+            string storageSource = Path.Combine(layout.GeneratedEditorCodeDirectory, "GlobalDataStorage.cpp");
+            string infoStorage = Path.Combine(layout.GeneratedCodeDirectory, "InfoStorage.h");
+            if (!File.Exists(header) || !File.Exists(enums)
+                || !File.Exists(storageHeader) || !File.Exists(storageSource)
+                || !File.Exists(infoStorage))
+                throw new InvalidOperationException(
+                    $"Unreal export artifact is missing. header={File.Exists(header)}, " +
+                    $"enums={File.Exists(enums)}, files={string.Join(",", Directory.GetFiles(root, "*", SearchOption.AllDirectories))}");
             if (Directory.GetFiles(layout.GeneratedCodeDirectory, "*Container.cs").Length != 0)
                 throw new InvalidOperationException("Unity Container was generated for Unreal.");
-            if (Directory.Exists(layout.RuntimeDataDirectory) && Directory.GetFiles(layout.RuntimeDataDirectory, "*.bytes").Length != 0)
-                throw new InvalidOperationException("MessagePack bytes were generated for Unreal.");
+            if (Directory.Exists(Path.Combine(root, "Saved", "PJDevDataTool")))
+                throw new InvalidOperationException("Unreal intermediate CSV/JSON directory was left behind.");
+
+            string headerText = File.ReadAllText(header);
+            string enumText = File.ReadAllText(enums);
+            var knownEnums = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+            {
+                ["Test"] = new[] { "Value" }
+            };
+            string inMemoryCsv = CsvTableParser.BuildDeployedCsv(
+                new CsvTableParseResult(
+                    "CharacterData",
+                    new[] { "Id", "Mode" },
+                    new[] { "int", "Test" },
+                    new[] { "Test" },
+                    knownEnums,
+                    new[] { new[] { "1", "Value" } }),
+                (column, value) => UnrealCodeGenerator.ToUnrealCsvValue(
+                    column == 0 ? "int" : "Test", value, knownEnums));
+            if (!enumText.Contains("enum class ETest")
+                || !enumText.Contains("enum class EOther")
+                || !inMemoryCsv.Contains("1,Value"))
+                throw new InvalidOperationException("Unreal enum or in-memory CSV output mismatch.");
+            if (!headerText.Contains("GAMEPLAYCORE_API"))
+                throw new InvalidOperationException("Unreal header did not use the resolved module API macro.");
+            string storageSourceText = File.ReadAllText(storageSource);
+            string infoStorageText = File.ReadAllText(infoStorage);
+            if (!File.ReadAllText(storageHeader).Contains("UGlobalDataStorage")
+                || !storageSourceText.Contains("ConstructorHelpers::FObjectFinder<UDataTable>")
+                || !storageSourceText.Contains("FInfoStorageRegistry::BuildAll(*this)")
+                || !infoStorageText.Contains("class IInfoStorage")
+                || !infoStorageText.Contains("REGISTER_INFO_STORAGE(Type)")
+                || !storageSourceText.Contains("Storage->Build(Data)"))
+                throw new InvalidOperationException("Unreal runtime storage output mismatch.");
         }
         finally
         {
@@ -358,16 +442,35 @@ internal static class Program
                 throw new InvalidOperationException("EnumName or Value casing was merged.");
             }
 
-            string unrealEnums = UnrealCodeGenerator.GenerateEnumHeader(catalog);
-            foreach (string expected in new[]
+            bool typeCollisionRejected = false;
+            try
             {
-                "enum class ETest", "enum class EtEST", "enum class Etest",
-                "    Value,", "    value,", "    vALUE"
-            })
-            {
-                if (!unrealEnums.Contains(expected))
-                    throw new InvalidOperationException("Unreal Enum casing changed: " + expected);
+                UnrealCodeGenerator.GenerateEnumHeader(catalog);
             }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("Unreal Enum 이름 충돌"))
+            {
+                typeCollisionRejected = true;
+            }
+            if (!typeCollisionRejected)
+                throw new InvalidOperationException("Case-only Unreal Enum type collision was accepted.");
+
+            var memberCollisionCatalog = new EnumCatalog(
+                new[] { "Single" },
+                new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+                {
+                    ["Single"] = new[] { "Value", "value" }
+                });
+            bool memberCollisionRejected = false;
+            try
+            {
+                UnrealCodeGenerator.GenerateEnumHeader(memberCollisionCatalog);
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("Unreal Enum 값 충돌"))
+            {
+                memberCollisionRejected = true;
+            }
+            if (!memberCollisionRejected)
+                throw new InvalidOperationException("Case-only Unreal Enum member collision was accepted.");
 
             var validTable = new CsvTableParseResult(
                 "CaseData",

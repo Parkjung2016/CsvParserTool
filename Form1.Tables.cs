@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -543,7 +543,7 @@ namespace CSVParserTool
             if (previewPlatform == ExportPlatform.Unreal
                 && TryGetCurrentTargetLayout(out ExportTargetLayout previewLayout))
             {
-                previewProjectName = previewLayout.ProjectName;
+                previewProjectName = previewLayout.ModuleName;
             }
             string cacheKey = BuildPreviewCacheKey(
                 xlsxPath, previewFolder, previewExportVersion, previewPlatform, previewProjectName);

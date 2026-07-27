@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
+using CSVParserTool.Exporting;
 
 namespace CSVParserTool
 {
@@ -43,6 +44,7 @@ namespace CSVParserTool
             }
         }
 
+        private readonly ExportPlatform exportPlatform;
         private readonly Panel header = new Panel();
         private readonly Label title = new Label();
         private readonly Label subtitle = new Label();
@@ -68,8 +70,9 @@ namespace CSVParserTool
         private int contentTransitionInitialWidth;
         private bool hasBeenShown;
 
-        public ToolInfoForm()
+        public ToolInfoForm(ExportPlatform exportPlatform)
         {
+            this.exportPlatform = exportPlatform;
             InitializeSections();
             InitializeLayout();
             ApplyTheme();
@@ -77,6 +80,13 @@ namespace CSVParserTool
             if (AnimationsEnabled)
                 Opacity = 0D;
         }
+
+        public ToolInfoForm() : this(ExportPlatform.Unity)
+        {
+        }
+
+        private bool IsUnreal => exportPlatform == ExportPlatform.Unreal;
+        private string EngineName => IsUnreal ? "Unreal Engine" : "Unity";
 
         protected override void Dispose(bool disposing)
         {
@@ -131,7 +141,7 @@ namespace CSVParserTool
 
             subtitle.AutoSize = true;
             subtitle.Location = new Point(25, 47);
-            subtitle.Text = "테이블 작성부터 참조와 Export 검증까지";
+            subtitle.Text = EngineName + " · 테이블 작성부터 코드 사용과 Export까지";
 
             header.Controls.Add(closeButton);
             header.Controls.Add(title);
@@ -192,6 +202,8 @@ namespace CSVParserTool
             sections.Add(new GuideSection("Enum 관리", RenderEnumCatalog));
             sections.Add(new GuideSection("테이블 참조", RenderReferences));
             sections.Add(new GuideSection("버전 · Export", RenderExport));
+            sections.Add(new GuideSection("코드 사용", RenderCodeUsage));
+            sections.Add(new GuideSection("CLI", RenderCli));
             sections.Add(new GuideSection("오류 · 검증", RenderValidation));
         }
 
@@ -372,39 +384,48 @@ namespace CSVParserTool
         }
         private void RenderGettingStarted()
         {
-            Heading("빠르게 시작하기");
-            Body("XLSX 원본 폴더와 Unity 프로젝트 경로를 선택한 뒤 Export 버전을 입력하고 ‘데이터 Export’를 누릅니다.");
+            Heading(EngineName + " 빠르게 시작하기");
+            Body("XLSX 원본 폴더와 " + EngineName + " 프로젝트 루트를 선택한 뒤 Export 버전을 입력하고 ‘데이터 Export’를 누릅니다.");
             Subheading("기본 흐름");
             Step("1", "새 XLSX 버튼으로 테이블을 만들거나 기존 DT_*.xlsx를 준비합니다.");
             Step("2", "첫 세 행에 헤더, 버전, 타입을 입력합니다.");
-            Step("3", "데이터를 작성하고 미리보기에서 생성 코드를 확인합니다.");
-            Step("4", "Export를 실행해 게임에서 사용할 데이터 파일과 C# 코드를 생성합니다.");
+            Step("3", "데이터를 작성하고 미리보기에서 " + (IsUnreal ? "C++" : "C#") + " 생성 코드를 확인합니다.");
+            Step("4", IsUnreal
+                ? "Unreal Editor를 닫고 Export하여 C++ 코드와 UDataTable을 생성합니다."
+                : "Export하여 CSV·Bytes와 Unity 런타임 C# 코드를 생성합니다.");
             Note("새 XLSX 이름에 DT_를 입력하지 않아도 자동으로 붙습니다. CharacterStat 입력 → DT_CharacterStat.xlsx 생성");
-            Note("위쪽 테마 버튼에서 기본·초원·바다 테마를 고를 수 있습니다. 다크 모드는 선택한 테마에 맞춰 적용됩니다.");
+            Note("엔진 선택은 저장됩니다. 위쪽 엔진 버튼에서 바꿀 수 있고, 엔진마다 프로젝트 경로와 XLSX 경로를 따로 기억합니다.");
         }
-
         private void RenderFiles()
         {
-            Heading("파일 이름과 폴더");
+            Heading(EngineName + " 파일과 폴더");
             Subheading("새 XLSX 만들기");
             Body("이름 입력 칸에는 테이블 이름만 입력해도 됩니다. 확장자는 제거되고 DT_가 없으면 자동으로 붙습니다.");
             Table(
-                "입력	실제 생성 파일",
-                "CharacterStat	DT_CharacterStat.xlsx",
-                "DT_Item	DT_Item.xlsx",
-                "Stage.xlsx	DT_Stage.xlsx");
+                "입력\t실제 생성 파일",
+                "CharacterStat\tDT_CharacterStat.xlsx",
+                "DT_Item\tDT_Item.xlsx",
+                "Stage.xlsx\tDT_Stage.xlsx");
             Bullet("파일명에 사용할 수 없는 문자는 자동으로 제거됩니다.");
             Bullet("같은 이름의 XLSX가 이미 있으면 새로 만들지 않습니다.");
-            Bullet("엑셀 파일에 시트가 여러 개 있어도 첫 번째 시트만 변환합니다.");
-            Subheading("경로 선택");
-            Bullet("프로젝트 경로는 Assets 폴더가 아니라 Unity 프로젝트 루트를 선택합니다.");
-            Bullet("XLSX 원본은 작업용 엑셀 파일을 모아 둔 폴더입니다.");
             Bullet("~$로 시작하는 Excel 임시 파일은 목록과 Export에서 제외됩니다.");
-            Subheading("원본 없는 테이블 산출물 정리");
-            Body("원본 XLSX가 없는 테이블의 CSV·게임용 데이터·C# 파일을 Export할 때 자동으로 정리합니다.");
-            Note("원본 없이 산출물만 보관하려면 ‘원본 없는 테이블 산출물 정리’ 옵션을 끄세요.");
+            Subheading("프로젝트 경로");
+            if (IsUnreal)
+            {
+                Bullet(".uproject 파일이 하나 있는 Unreal 프로젝트 루트를 선택합니다.");
+                Bullet("C++ 헤더: Source/{Module}/Public/DataTables/Generated");
+                Bullet("C++ 구현: Source/{Module}/Private/DataTables/Generated");
+                Bullet("UDataTable: Content/PJDevData/DataTables");
+                Note("중간 CSV·JSON은 프로젝트에 남기지 않습니다. Content Browser에는 최종 UDataTable만 표시됩니다.");
+            }
+            else
+            {
+                Bullet("Assets 폴더 자체가 아니라 Assets와 ProjectSettings가 있는 Unity 프로젝트 루트를 선택합니다.");
+                Bullet("C# 코드: Assets/_Game/DataTables/Scripts");
+                Bullet("CSV·Bytes: Assets/_Game/DataTables/Content");
+                Note("‘원본 없는 테이블 산출물 정리’를 켜면 XLSX가 사라진 테이블의 생성 파일도 Export 때 정리합니다.");
+            }
         }
-
         private void RenderTableLayout()
         {
             Heading("테이블 기본 구조");
@@ -415,127 +436,182 @@ namespace CSVParserTool
                 "타입\tint\tstring\tfloat",
                 "\t1\tWarrior\t7.5");
             Subheading("컬럼 규칙");
-            Bullet("Id 컬럼은 필수이며 테이블 안에서 고유해야 합니다.");
+            Bullet("Id 컬럼은 필수이며 각 테이블 안에서 고유해야 합니다.");
             Bullet("헤더가 #으로 시작하는 컬럼은 메모용이며 Export에서 제외됩니다.");
-            Bullet("헤더명은 생성되는 C# 프로퍼티 이름으로 사용됩니다.");
-            Bullet("C# 변수 이름에 쓸 수 없는 공백이나 기호는 자동으로 _로 바뀝니다.");
+            Bullet("헤더명은 생성되는 " + (IsUnreal ? "USTRUCT 필드" : "C# 프로퍼티") + " 이름으로 사용됩니다.");
+            Bullet("앞뒤 공백은 제거하고, 코드 식별자에 쓸 수 없는 공백이나 기호는 _로 바꿉니다.");
             Bullet("빈 타입이나 지원하지 않는 타입이 있으면 Export가 실패합니다.");
         }
-
         private void RenderTypes()
         {
             Heading("지원 타입");
-            Body("타입 행에는 아래 타입 중 하나를 입력합니다. 대소문자는 구분하지 않습니다.");
-            Bullet("타입에 str이라고 써도 string으로 처리합니다.");
+            Body("타입 행에는 아래 타입 중 하나를 입력합니다. 기본 타입 이름은 대소문자를 구분하지 않습니다.");
             Code("bool   uint   int   float   double   string\nenum:CharacterState   enum:ItemTag[]\nint[]   string[]\nref CharacterStat.Speed   ref CharacterStat.Speed[]\nkeyref Stat.Id   keyref Stat.Id[]");
             Subheading("Enum");
             Bullet("모든 enum은 Enum XLSX 버튼으로 만든 DT_Enums.xlsx 한 곳에서 관리합니다.");
-            Bullet("테이블의 타입 행에는 반드시 enum:CharacterType처럼 DT_Enums.xlsx에 등록한 EnumName을 입력합니다.");
-            Bullet("배열도 같은 규칙으로 enum:CharacterType[]처럼 입력합니다. enum 단독 입력이나 E 접두사 방식은 지원하지 않습니다.");
+            Bullet("타입 행에는 enum:CharacterType, 배열은 enum:CharacterType[] 형식으로 입력합니다.");
+            Bullet(IsUnreal
+                ? "생성 시 CharacterType은 Unreal 규칙에 맞는 ECharacterType UENUM으로 바뀝니다."
+                : "생성 시 CharacterType C# enum을 그대로 사용합니다.");
             Subheading("배열");
-            Body("여러 값을 넣을 때는 타입 뒤에 []를 붙이고, 한 셀 안의 값은 | 문자로 구분합니다.");
+            Body("타입 뒤에 []를 붙이고 한 셀의 여러 값은 | 문자로 구분합니다.");
             Table(
                 "헤더\t타입\t데이터 입력",
                 "Rewards\tint[]\t10|20|30",
                 "Tags\tenum:ItemTag[]\tWeapon|Rare",
                 "Names\tstring[]\tSword|Shield");
             Bullet("빈 셀은 길이가 0인 빈 배열로 생성됩니다.");
-            Bullet("생성되는 C# 타입은 List<T>가 아니라 변경할 필요가 없는 T[] 배열입니다.");
+            Bullet(IsUnreal ? "생성 타입은 TArray<T>입니다." : "생성 타입은 List<T>가 아닌 T[]입니다.");
             Subheading("참조 타입");
-            Bullet("참조 컬럼은 타입 대신 ref 테이블명.컬럼명 형식으로 입력합니다.");
-            Bullet("참조 대상 컬럼의 실제 타입을 자동으로 따라갑니다.");
-            Bullet("여러 Id를 참조하려면 ref CharacterStat.Speed[]로 쓰고 데이터에는 1|2|3처럼 입력합니다.");
-            Bullet("가져온 값이 또 다른 테이블을 참조해도 마지막 값까지 자동으로 따라갑니다.");
-            Bullet("Id 컬럼 자체는 ref 타입으로 지정할 수 없습니다.");
-            Note("배열 값 안에 | 문자를 데이터 자체로 넣는 형식은 지원하지 않습니다.");
+            Bullet("ref 테이블명.컬럼명은 대상 값을 가져오고 대상 컬럼의 실제 타입을 따라갑니다.");
+            Bullet("keyref 테이블명.컬럼명은 입력값을 유지하면서 대상 값의 존재만 검사합니다.");
+            Bullet("배열 참조는 뒤에 []를 붙이고 1|2|3처럼 입력합니다.");
         }
-
         private void RenderEnumCatalog()
         {
             Heading("Enum을 한 파일에서 관리하기");
-            Body("테이블 목록 위의 Enum XLSX 버튼을 누르면 DT_Enums.xlsx가 생성되고 바로 열립니다. 이미 파일이 있으면 새로 만들지 않고 기존 파일을 엽니다.");
-            Step("1", "Enum XLSX 버튼을 누릅니다.");
-            Step("2", "EnumName에 타입 이름을, Value에 enum 값을 입력합니다.");
-            Step("3", "같은 EnumName을 다음 행에 반복해서 값을 계속 추가합니다.");
+            Body("Enum XLSX 버튼을 누르면 비어 있는 DT_Enums.xlsx가 생성됩니다. EnumName과 Value를 한 행씩 추가합니다.");
             Table(
                 "EnumName\tValue\t#설명",
                 "CharacterType\tWarrior\t전사",
                 "CharacterType\tMage\t마법사",
                 "ItemGrade\tCommon\t일반");
-            Subheading("생성 결과");
-            Code("public enum CharacterType\n{\n    Warrior,\n    Mage,\n}\n\npublic enum ItemGrade\n{\n    Common,\n}");
+            Subheading(EngineName + " 생성 결과");
+            Code(IsUnreal
+                ? "UENUM(BlueprintType)\nenum class ECharacterType : uint8\n{\n    Warrior,\n    Mage,\n};"
+                : "public enum CharacterType\n{\n    Warrior,\n    Mage,\n}");
             Subheading("테이블에서 사용");
             Table(
                 "헤더\t타입\t데이터 입력",
                 "Type\tenum:CharacterType\tWarrior",
                 "AllowedTypes\tenum:CharacterType[]\tWarrior|Mage");
             Bullet("DT_Enums.xlsx에 적힌 enum은 테이블에서 사용하지 않아도 모두 생성됩니다.");
-            Bullet("등록되지 않은 enum 값을 테이블에 입력하면 Export가 실패합니다.");
-            Bullet("EnumName이나 Value가 중복되거나 C# 이름으로 사용할 수 없으면 해당 XLSX 행을 알려줍니다.");
-            Note("#설명은 작업자가 알아보기 위한 메모이며 생성되는 enum 코드에는 포함되지 않습니다.");
+            Bullet("등록되지 않은 enum 값이나 완전히 중복된 EnumName·Value가 있으면 Export가 실패합니다.");
+            if (IsUnreal)
+                Bullet("Unreal 리플렉션 충돌을 막기 위해 ETest와 EtEST처럼 대소문자만 다른 이름도 실패 처리합니다.");
+            else
+                Bullet("Unity C#에서는 Test와 tEST를 서로 다른 식별자로 유지합니다.");
+            Note("#설명은 작업자가 알아보기 위한 메모이며 생성 코드에는 포함되지 않습니다.");
         }
-
         private void RenderReferences()
         {
             Heading("다른 테이블 참조하기");
-            Body("참조는 타입 행에 직접 적습니다. 컬럼 이름만으로 참조를 추측하지 않으므로 규칙이 명확하고 안전합니다.");
-
+            Body("참조는 컬럼 이름으로 추측하지 않고 타입 행의 ref 또는 keyref 규칙으로만 판단합니다.");
             Subheading("실제 값 가져오기 — ref");
-            Body("데이터 행에는 대상 테이블의 Id를 입력합니다. Export하면 해당 행의 지정 컬럼 값으로 바뀝니다.");
             Table(
                 "#설명\tId\tMoveSpeed",
                 "버전\t1.0.0\t1.0.0",
                 "타입\tint\tref CharacterStat.Speed",
                 "\t0\t1");
-            Bullet("MoveSpeed의 1은 DT_CharacterStat에서 Id가 1인 행의 Speed 실제 값으로 바뀝니다.");
-            Bullet("생성되는 C# 타입도 CharacterStat.Speed 타입을 자동으로 따라갑니다.");
-            Code("/// <summary>CharacterStat.Speed 참조</summary>\npublic float MoveSpeed { get; set; }");
-
+            Bullet("MoveSpeed의 1은 DT_CharacterStat에서 Id가 1인 행의 Speed 값으로 바뀝니다.");
+            Bullet("생성 변수 타입도 CharacterStat.Speed의 실제 타입을 자동으로 따라갑니다.");
+            Code(IsUnreal
+                ? "/** CharacterStat.Speed 참조 */\nUPROPERTY(EditAnywhere, BlueprintReadOnly)\nfloat MoveSpeed = 0.0f;"
+                : "/// <summary>CharacterStat.Speed 참조</summary>\npublic float MoveSpeed { get; set; }");
             Subheading("값은 유지하고 존재만 확인 — keyref");
-            Body("외래 키처럼 원래 값을 그대로 저장하면서, 대상 테이블에 실제로 등록되어 있는지만 검사할 때 사용합니다.");
             Table(
                 "#설명\tId\tCharacterId\tStatId\tBaseValue",
                 "버전\t1.0.0\t1.0.0\t1.0.0\t1.0.0",
                 "타입\tint\tint\tkeyref Stat.Id\tfloat",
                 "\t10000\t1000\tHealth\t100");
             Bullet("Health는 그대로 Export되며 DT_Stat.Id에 Health가 있는지만 확인합니다.");
-            Bullet("DT_Stat.Id에 Health가 없으면 잘못된 데이터 파일을 만들지 않고 Export 전체가 실패합니다.");
-            Bullet("여러 값을 검사하려면 keyref Stat.Id[]로 쓰고 Health|Attack처럼 입력합니다.");
-            Code("/// <summary>Stat.Id 값 존재 검증</summary>\npublic string StatId { get; set; }");
-
-            Subheading("테이블 이름");
-            Body("Stat, DT_Stat, StatData처럼 입력해도 같은 테이블 이름으로 인식합니다.");
+            Bullet("대상 값이 없거나 참조가 순환하면 Preview와 Export가 실패합니다.");
+            Bullet("배열은 keyref Stat.Id[]와 Health|Attack 형식으로 입력합니다.");
             Note("ref는 값을 가져오고, keyref는 입력값을 유지한 채 존재 여부만 확인합니다.");
         }
         private void RenderExport()
         {
-            Heading("버전과 Export");
-            Bullet("전체 Export: 목록에 있는 모든 테이블을 생성합니다.");
-            Bullet("선택 Export: 테이블 목록 왼쪽에서 체크한 항목만 생성합니다. 참조 대상은 자동으로 함께 확인합니다.");
-            Body("각 컬럼의 버전이 현재 Export 버전보다 작거나 같을 때만 결과에 포함됩니다.");
-            Bullet("Id 컬럼은 컬럼 버전과 관계없이 항상 Export에 포함됩니다.");
+            Heading(EngineName + " 버전과 Export");
+            Bullet("전체 Export는 모든 테이블을, 선택 Export는 목록 왼쪽 체크 영역에서 선택한 테이블만 생성합니다.");
+            Bullet("선택하지 않은 테이블도 참조 검증에는 함께 사용됩니다.");
+            Body("컬럼 버전이 현재 Export 버전보다 작거나 같을 때만 포함되며 Id는 항상 포함됩니다.");
             Table(
-                "컬럼 버전\tExport 결과",
+                "컬럼 버전\tExport 1.2.0 결과",
                 "1.0.0\t포함",
                 "1.2.0\t포함",
                 "2.0.0\t제외");
-            Subheading("생성 결과");
-            Bullet("Content/CSV: 사람이 열어서 확인할 수 있는 데이터 파일");
-            Bullet("Content/Bytes: 게임에서 빠르게 읽기 위한 데이터 파일");
-            Bullet("Scripts: Unity 코드에서 데이터를 읽고 사용하기 위한 C# 파일");
+            if (IsUnreal)
+            {
+                Subheading("Unreal 생성 결과");
+                Bullet("Source/{Module}/Public/DataTables/Generated에 UENUM·USTRUCT Row 헤더를 생성합니다.");
+                Bullet("GlobalDataStorage와 InfoStorage 프레임워크를 생성하고 Editor 타깃을 컴파일합니다.");
+                Bullet("XLSX 데이터를 메모리에서 UDataTable로 변환하여 /Game/PJDevData/DataTables에 저장합니다.");
+                Bullet("프로젝트에는 중간 CSV나 JSON을 남기지 않습니다.");
+                Bullet("Unreal Editor가 열려 있으면 미저장 작업 보호를 위해 강제 종료하지 않고 Export를 중단합니다.");
+                Note("C++ 헤더는 IDE 또는 C++ Classes에서, 생성된 UDataTable은 Content Browser에서 확인합니다.");
+            }
+            else
+            {
+                Subheading("Unity 생성 결과");
+                Bullet("Content/CSV: 사람이 확인할 수 있는 최종 데이터");
+                Bullet("Content/Bytes: MessagePack 기반 런타임 데이터");
+                Bullet("Scripts: 데이터 클래스, Container, Loader, InfoStorage C# 코드");
+                Bullet("GlobalDataContainer.LoadAllAsync()가 원본 테이블과 등록한 InfoStorage를 순서대로 로드합니다.");
+                Note("UniTask가 없으면 동기 API인 LoadAll()이 생성됩니다.");
+            }
             Note("참조 대상 컬럼이 현재 Export 버전에서 제외되면 참조 오류로 처리됩니다.");
+        }
+        private void RenderCodeUsage()
+        {
+            Heading(EngineName + " 코드에서 사용하기");
+            if (IsUnreal)
+            {
+                Subheading("원본 테이블 조회");
+                Body("GlobalDataStorage는 GameInstance Subsystem이라 별도 생성이나 초기화 호출이 필요 없습니다.");
+                Code("const UGlobalDataStorage* Data = UGlobalDataStorage::Get(this);\nconst FStatDefinitionRow* Row =\n    Data ? Data->FindStatDefinition(TEXT(\"1\")) : nullptr;");
+                Subheading("가공 데이터 — InfoStorage");
+                Body("여러 테이블 조합이나 검색용 Map은 생성 폴더 밖에 사용자 InfoStorage로 작성합니다.");
+                Code("class FGameStatInfoStorage final : public IInfoStorage\n{\npublic:\n    void Build(const UGlobalDataStorage& Data) override\n    {\n        Data.GetAllStatDefinition(Rows);\n    }\nprivate:\n    TArray<FStatDefinitionRow> Rows;\n};\n\n// .cpp에서 한 번만 등록\nREGISTER_INFO_STORAGE(FGameStatInfoStorage);");
+                Code("const FGameStatInfoStorage* Stats =\n    FInfoStorageRegistry::Get<FGameStatInfoStorage>();");
+                Note("등록된 InfoStorage의 Build는 원본 UDataTable 로드 직후 자동 호출됩니다. 사용자 파일은 Export가 덮어쓰지 않습니다.");
+            }
+            else
+            {
+                Subheading("전체 데이터 로드");
+                Code("using PJDev.Data;\n\nawait GlobalDataContainer.Instance.LoadAllAsync();");
+                Subheading("Id로 한 행 조회");
+                Code("StatDefinitionData row =\n    GlobalDataContainer.Instance.GetStatDefinitionData(1);\n\nif (GlobalDataContainer.Instance.TryGetStatDefinitionData(1, out var found))\n{\n    // found 사용\n}");
+                Subheading("가공 데이터 — InfoStorage");
+                Code("var stats = new GameStatInfoStorage(\n    GlobalDataContainer.Instance.StatDefinitionData);\nInfoStorageRegistry.Register(stats);\n\nawait GlobalDataContainer.Instance.LoadAllAsync();\nGameStatInfoStorage loaded = InfoStorageRegistry.Get<GameStatInfoStorage>();");
+                Note("InfoStorage는 LoadAllAsync() 전에 한 번 등록합니다. UniTask가 없는 프로젝트에서는 LoadAll()을 사용합니다.");
+            }
+        }
+
+        private void RenderCli()
+        {
+            Heading(EngineName + " CLI 사용");
+            Body("GUI와 같은 검증·생성 파이프라인을 명령줄이나 빌드 자동화에서 실행합니다.");
+            Subheading("기본 명령");
+            Code(IsUnreal
+                ? "DataTool.exe export --engine unreal --project \"D:\\Game\\MyUnrealProject\" --excel \"D:\\Data\\Xlsx\" --refresh-xlsx --version 1.0.0"
+                : "DataTool.exe export --engine unity --project \"D:\\Game\\MyUnityProject\" --excel \"D:\\Data\\Xlsx\" --refresh-xlsx --version 1.0.0");
+            Subheading("주요 옵션");
+            Table(
+                "옵션\t설명",
+                "--project <경로>\t프로젝트 루트 (필수)",
+                "--engine unity|unreal\tExport 엔진 (생략 시 unity)",
+                "--excel <경로>\tDT_*.xlsx 원본 폴더",
+                "--refresh-xlsx\tXLSX 원본 검사와 산출물 정리 실행",
+                "--version <버전>\t예: 1.0.0; 생략 시 모든 컬럼",
+                "--no-orphan-cleanup\t원본 없는 기존 산출물 유지");
+            if (IsUnreal)
+                Bullet("--no-unreal-import를 추가하면 C++ 코드만 생성하고 컴파일·UDataTable 자동 Import를 생략합니다.");
+            Bullet("성공 종료 코드는 0, 잘못된 옵션·검증·Export 실패는 1입니다.");
+            Bullet("DataTool.exe --help로 전체 옵션을 확인할 수 있습니다.");
+            Note("전체 CLI 문서는 저장소의 docs/CLI.md에 있습니다.");
         }
 
         private void RenderValidation()
         {
-            Heading("Export 실패 조건");
-            Body("모든 테이블과 참조를 먼저 확인합니다. 하나라도 잘못되면 잘못된 파일을 만들지 않고 Export를 중단합니다.");
-            Bullet("ref 또는 keyref 대상 테이블이나 컬럼이 없음");
-            Bullet("ref에 입력한 대상 Id가 없음");
-            Bullet("keyref에 입력한 값이 대상 컬럼에 없음");
-            Bullet("대상 테이블에 같은 Id가 두 개 이상 있음");
+            Heading(EngineName + " Export 실패 조건");
+            Body("모든 테이블과 참조를 먼저 검사합니다. 하나라도 잘못되면 Export를 중단합니다.");
+            Bullet("ref 또는 keyref 대상 테이블·컬럼·값이 없음");
+            Bullet("한 테이블 안에 같은 Id가 두 개 이상 있음");
             Bullet("ref 참조가 서로 순환함");
             Bullet("필수 Id, 버전 또는 타입이 잘못됨");
+            Bullet("EnumName·Value가 중복되었거나 등록되지 않은 enum 값을 사용함");
+            if (IsUnreal)
+                Bullet("Unreal enum 이름 또는 값이 대소문자만 달라 엔진 이름이 충돌함");
             Subheading("오류 메시지 예시");
             Code("DT_CharacterStat[Id=10000].StatId:\nDT_Stat.Id에서 값 'Health'을(를) 찾을 수 없습니다.\n(keyref 존재 검증)");
             Note("오류에는 테이블, 행 Id, 컬럼명이 함께 표시되므로 잘못된 값을 바로 찾을 수 있습니다.");

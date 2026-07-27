@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -274,26 +274,50 @@ namespace CSVParserTool
                 dataRows);
         }
 
-        /// <summary>배포용 CSV — 헤더·데이터 행만 (버전·타입 행·# 열 제외, Export 버전 필터 반영).</summary>
-        public static void WriteDeployedCsv(string csvPath, CsvTableParseResult table)
+        /// <summary>배포용 CSV 문자열 — 헤더·데이터 행만 (버전·타입 행·# 열 제외, Export 버전 필터 반영).</summary>
+        public static string BuildDeployedCsv(
+            CsvTableParseResult table,
+            Func<int, string, string> transformCell = null)
         {
-            if (string.IsNullOrWhiteSpace(csvPath))
-                throw new ArgumentException("CSV path is empty.", nameof(csvPath));
             if (table == null)
                 throw new ArgumentNullException(nameof(table));
 
             var sb = new StringBuilder();
             AppendCsvRow(sb, table.Headers);
             foreach (string[] row in table.DataRows)
-                AppendCsvRow(sb, row);
+            {
+                if (transformCell == null)
+                {
+                    AppendCsvRow(sb, row);
+                    continue;
+                }
+
+                var transformed = new string[row.Length];
+                for (int column = 0; column < row.Length; column++)
+                    transformed[column] = transformCell(column, row[column]);
+                AppendCsvRow(sb, transformed);
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>배포용 CSV 파일을 기록합니다. Unity 산출물에서 사용합니다.</summary>
+        public static void WriteDeployedCsv(
+            string csvPath,
+            CsvTableParseResult table,
+            Func<int, string, string> transformCell = null)
+        {
+            if (string.IsNullOrWhiteSpace(csvPath))
+                throw new ArgumentException("CSV path is empty.", nameof(csvPath));
 
             string dir = Path.GetDirectoryName(csvPath);
             if (!string.IsNullOrEmpty(dir))
                 Directory.CreateDirectory(dir);
 
-            GeneratedFileWriter.WriteAllTextIfChanged(csvPath, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            GeneratedFileWriter.WriteAllTextIfChanged(
+                csvPath,
+                BuildDeployedCsv(table, transformCell),
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         }
-
         private static void ValidateUniqueIds(
             string className,
             string[] headers,

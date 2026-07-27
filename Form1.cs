@@ -91,7 +91,7 @@ namespace CSVParserTool
                     return string.Empty;
                 return currentExportPlatform == ExportPlatform.Unity
                     ? Path.GetDirectoryName(layout.StagingCsvDirectory)
-                    : Path.GetDirectoryName(layout.StagingCsvDirectory);
+                    : Path.Combine(layout.ProjectRoot, "Content", "PJDevData", "DataTables");
             }
         }
         private FileSystemWatcher excelDirWatcher;

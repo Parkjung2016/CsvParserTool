@@ -25,6 +25,7 @@ namespace CSVParserTool.Exporting
     {
         public string ProjectRoot { get; }
         public string ProjectName { get; }
+        public string ModuleName { get; }
         public string StagingCsvDirectory { get; }
         public string RuntimeDataDirectory { get; }
         public string GeneratedCodeDirectory { get; }
@@ -37,9 +38,29 @@ namespace CSVParserTool.Exporting
             string runtimeDataDirectory,
             string generatedCodeDirectory,
             string generatedEditorCodeDirectory)
+            : this(
+                projectRoot,
+                projectName,
+                projectName,
+                stagingCsvDirectory,
+                runtimeDataDirectory,
+                generatedCodeDirectory,
+                generatedEditorCodeDirectory)
+        {
+        }
+
+        public ExportTargetLayout(
+            string projectRoot,
+            string projectName,
+            string moduleName,
+            string stagingCsvDirectory,
+            string runtimeDataDirectory,
+            string generatedCodeDirectory,
+            string generatedEditorCodeDirectory)
         {
             ProjectRoot = projectRoot ?? throw new ArgumentNullException(nameof(projectRoot));
             ProjectName = projectName ?? throw new ArgumentNullException(nameof(projectName));
+            ModuleName = moduleName ?? throw new ArgumentNullException(nameof(moduleName));
             StagingCsvDirectory = stagingCsvDirectory ?? throw new ArgumentNullException(nameof(stagingCsvDirectory));
             RuntimeDataDirectory = runtimeDataDirectory ?? throw new ArgumentNullException(nameof(runtimeDataDirectory));
             GeneratedCodeDirectory = generatedCodeDirectory ?? throw new ArgumentNullException(nameof(generatedCodeDirectory));
@@ -151,16 +172,18 @@ namespace CSVParserTool.Exporting
             ValidateProject(projectRoot);
             string normalizedRoot = Path.GetFullPath(projectRoot);
             string projectFile = FindProjectFile(normalizedRoot);
-            string projectName = Path.GetFileNameWithoutExtension(projectFile);
-            string moduleRoot = Path.Combine(normalizedRoot, "Source", projectName);
-            string contentRoot = Path.Combine(normalizedRoot, "Content", "PJDevData", "DataTables");
+            UnrealProjectModule module = UnrealProjectModuleResolver.Resolve(normalizedRoot, projectFile);
+            // Keep CSV/JSON outside Content so Unreal does not prompt to import generated sources.
+            // Only finalized UDataTable assets belong under Content.
+            string sourceDataRoot = Path.Combine(normalizedRoot, "Saved", "PJDevDataTool", "Source");
             return new ExportTargetLayout(
                 normalizedRoot,
-                projectName,
-                Path.Combine(contentRoot, "CSV"),
-                Path.Combine(contentRoot, "Generated"),
-                Path.Combine(moduleRoot, "DataTables", "Generated"),
-                Path.Combine(moduleRoot, "DataTables", "Editor"));
+                module.ProjectName,
+                module.ModuleName,
+                Path.Combine(sourceDataRoot, "CSV"),
+                sourceDataRoot,
+                Path.Combine(module.ModuleRoot, "Public", "DataTables", "Generated"),
+                Path.Combine(module.ModuleRoot, "Private", "DataTables", "Generated"));
         }
 
         private static string FindProjectFile(string projectRoot)

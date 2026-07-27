@@ -1,6 +1,11 @@
 # PJDev Data Tool
 
-Unity 프로젝트용 XLSX 데이터 작성, 검증, CSV 및 코드 생성을 지원하는 GUI/CLI 도구입니다.
+Unity와 Unreal 프로젝트용 XLSX 데이터 작성, 검증, 런타임 데이터 및 코드 생성을 지원하는 GUI/CLI 도구입니다.
+
+## 사용 문서
+
+- [CLI 사용법](docs/CLI.md)
+- [Unity / Unreal Export 구조와 Unreal 코드 사용법](docs/ENGINE_EXPORT_ARCHITECTURE.md)
 
 ## 라이선스
 
@@ -11,6 +16,7 @@ Unity 프로젝트용 XLSX 데이터 작성, 검증, CSV 및 코드 생성을 �
 
 테마와 마스코트 이미지는 OpenAI 이미지 생성 도구로 제작됐으며, 앱 아이콘은
 해당 마스코트에서 파생했습니다. 자세한 출처와 사용 조건은 위 문서를 확인하세요.
+
 ## 미니게임 확장
 
 Export 중 실행되는 게임은 Unity식 생명주기와 소스 자동 등록을 지원하며 모든 게임은 GUI EXE에 포함됩니다. 빠른 제작 방법은 [Mini Game Framework](docs/MiniGameFramework.md)를 확인하세요.

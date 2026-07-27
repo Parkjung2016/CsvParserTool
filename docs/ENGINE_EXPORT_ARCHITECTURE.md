@@ -15,7 +15,7 @@ Reference · Enum · Id · Version Validation
    ↓
 Engine Export Target
    ├─ Unity  → C# Container + MessagePack + Runtime Loader
-   └─ Unreal → UENUM/USTRUCT + CSV Import + UDataTable Assets
+   └─ Unreal → UENUM/USTRUCT 헤더 + 메모리 CSV payload → UDataTable
 ```
 
 ## 계층과 책임
@@ -38,8 +38,10 @@ Engine Export Target
   - 데이터: `Assets/_Game/DataTables/Content`
 - `UnrealEngineExportTarget`
   - 프로젝트 표식: 루트의 단일 `.uproject`
-  - 코드: `Source/{ProjectName}/DataTables/Generated`
-  - 데이터: `Content/PJDevData/DataTables`
+  - 기본 런타임 모듈: `.uproject`의 `Modules`와 `Source/**/*.Build.cs`를 함께 검사
+  - 공개 헤더: `Source/{ModuleName}/Public/DataTables/Generated`
+  - 중간 데이터: 파일을 생성하지 않고 메모리 CSV 문자열로 Commandlet에 전달
+  - Import 대상 패키지: `/Game/PJDevData/DataTables`
 
 UI와 CLI는 경로를 직접 조립하지 않고 `EngineExportTargetRegistry`에서 타깃을 얻는다. 자동 감지가 모호하면 사용자에게 Unity/Unreal을 직접 선택하게 한다.
 
@@ -53,9 +55,9 @@ UI와 CLI는 경로를 직접 조립하지 않고 `EngineExportTargetRegistry`�
 
 테이블마다 다음 파일을 생성한다.
 
-- `{Table}Row.generated.h`: `UENUM`, `USTRUCT(BlueprintType)`, `FTableRowBase`
-- `DT_{Table}.csv`: Unreal DataTable Import용 CSV
-- 선택적으로 `{ProjectName}DataTableRegistry.generated.h/.cpp`: 런타임 조회 진입점
+- `{Table}Row.h`: `UENUM`, `USTRUCT(BlueprintType)`, `FTableRowBase` (UHT가 `.generated.h` 생성)
+- `GlobalDataStorage.h/.cpp`: GameInstance 단위 자동 로드와 타입 안전 조회
+- `InfoStorage.h`: 여러 원본 테이블을 게임용 데이터로 가공하는 `IInfoStorage`와 자동 Registry
 
 타입 매핑:
 
@@ -71,24 +73,83 @@ UI와 CLI는 경로를 직접 조립하지 않고 `EngineExportTargetRegistry`�
 | `CharacterType` enum | `ECharacterType` |
 
 XLSX 타입 표기는 바꾸지 않는다. `enum:CharacterType`은 Unity에서 `CharacterType`, Unreal에서 `ECharacterType`으로 출력한다.
+Unreal 리플렉션 이름은 대소문자만 다른 식별자를 구분하지 못한다. EnumName 또는 같은 enum의 Value가 case-only로 충돌하면 Unreal Preview와 Export를 실패 처리하고, 충돌한 두 이름을 오류에 표시한다. XLSX와 Unity의 대소문자 구분은 변경하지 않는다.
+
 
 ## Unreal Import 실행 방식
 
-1. Data Tool이 검증된 CSV와 C++ 헤더를 원자적으로 생성한다.
-2. Unreal 프로젝트에 제공할 Editor 플러그인이 manifest를 읽는다.
-3. Commandlet/Editor Subsystem이 `UDataTable`을 생성 또는 갱신한다.
-4. Import 오류를 JSON 결과로 반환한다.
-5. Data Tool은 결과를 기존 Export 결과 표에 합친다.
+1. Data Tool이 전체 검증을 통과한 C++ 헤더와 메모리 CSV payload를 준비한다.
+2. `.uproject`의 `EngineAssociation`, Windows 등록 정보, Epic Launcher manifest에서 정확한 Unreal 설치를 찾는다.
+3. 프로젝트의 `*Editor.Target.cs` 타깃을 빌드하여 생성된 USTRUCT/UENUM을 UHT에 반영한다.
+4. 닫힌 Unreal Editor를 `PythonScriptCommandlet` 모드로 실행하고 메모리 문자열을 `UDataTable`로 생성·갱신한다.
+5. CSV Import Key Field는 `Id`, 대상 패키지 기본값은 `/Game/PJDevData/DataTables`다.
+6. 시스템 임시 폴더의 Import 결과를 확인한 뒤 Export 성공 처리하고 임시 스크립트와 결과를 즉시 삭제한다. `.uasset` 바이너리는 Data Tool이 직접 쓰지 않고 Unreal API로 저장한다.
 
-이 방식은 Unreal이 실행 중이 아니면 Commandlet, 실행 중이면 Editor Subsystem을 사용할 수 있게 한다.
+리플렉션 대상 `USTRUCT`/`UENUM` 헤더가 바뀌는 동안에는 해당 프로젝트의 Unreal Editor를 닫아야 한다. GUI는 실행 중인 Editor를 감지하면 저장 후 종료하도록 안내하고, CLI/Core Export는 오류로 중단한다. 저장하지 않은 작업을 보호하기 위해 프로세스를 강제 종료하지 않는다.
+
+`Source/{ModuleName}/Public`의 `.h`는 C++ 코드이므로 일반 Content Browser 에셋 목록에 표시되지 않는다. IDE 또는 Content Browser의 `C++ Classes` 표시 옵션에서 확인하며, 정상 컴파일이 끝나야 갱신된다. CSV와 manifest JSON은 프로젝트에 생성하지 않는다. `Content`에는 Import가 끝난 `.uasset` 형태의 `UDataTable`만 표시되므로 Editor 시작 시 CSV/JSON Import 안내가 반복되지 않는다.
+
+CLI에서 C++ 코드만 생성해야 하는 특수한 경우에는 `--no-unreal-import`를 사용한다. GUI와 일반 CLI Export는 자동 Import가 기본값이다.
+
+
+## Unreal 런타임 접근
+
+`UGlobalDataStorage`는 `UGameInstanceSubsystem`으로 생성되며 Export된 원본 UDataTable을 보관한다. 게임 규칙에 맞춘 조합, 그룹, 빠른 검색 Map은 사용자 정의 `IInfoStorage`에서 만든다. 생성 파일은 프레임워크만 제공하므로 사용자 코드는 Export 때 덮어쓰지 않는다.
+
+```cpp
+// GameStatInfoStorage.h
+#include "DataTables/Generated/InfoStorage.h"
+
+class FGameStatInfoStorage final : public IInfoStorage
+{
+public:
+    void Build(const UGlobalDataStorage& Data) override
+    {
+        TArray<FStatDefinitionRow> Rows;
+        Data.GetAllStatDefinition(Rows);
+
+        ByStatId.Reset();
+        for (const FStatDefinitionRow& Row : Rows)
+            ByStatId.Add(FName(*Row.StatId), Row);
+    }
+
+    void Clear() override
+    {
+        ByStatId.Reset();
+    }
+
+    const FStatDefinitionRow* Find(FName StatId) const
+    {
+        return ByStatId.Find(StatId);
+    }
+
+private:
+    TMap<FName, FStatDefinitionRow> ByStatId;
+};
+```
+
+```cpp
+// GameStatInfoStorage.cpp
+#include "GameStatInfoStorage.h"
+
+REGISTER_INFO_STORAGE(FGameStatInfoStorage);
+```
+
+원본 테이블 로드가 끝나면 등록된 모든 Storage의 `Build`가 자동 호출된다. 이후에는 다음처럼 가공 데이터를 가져온다.
+
+```cpp
+const FGameStatInfoStorage* Stats =
+    FInfoStorageRegistry::Get<FGameStatInfoStorage>();
+const FStatDefinitionRow* Health = Stats ? Stats->Find(TEXT("Health")) : nullptr;
+```
 
 ## 단계별 적용 순서
 
-1. 현재 Unity 흐름을 `UnityExportEmitter`로 이동하되 생성 결과가 완전히 같은지 golden test로 비교한다.
-2. GUI와 CLI에 `ExportPlatform`을 추가하고 기본값은 Unity로 유지한다.
-3. Unreal C++/CSV 생성 및 fixture test를 추가한다.
-4. Unreal Editor 플러그인과 Commandlet Import를 추가한다.
-5. 공통 Export 결과에 타깃 단계와 Unreal Import 결과를 표시한다.
+1. Unity와 Unreal의 공통 검증 모델을 유지한다.
+2. Unreal C++ 생성 결과와 메모리 Import payload를 fixture test로 검증한다.
+3. 실제 Unreal 프로젝트에서 Editor 타깃 빌드와 UDataTable 생성·갱신을 통합 검증한다.
+4. 공통 Export 결과에 컴파일과 Import 실패 원인을 표시한다.
+5. 엔진 버전별 Python API 차이는 실제 설치된 EngineAssociation 기준으로 검증한다.
 
 ## 금지할 결합
 

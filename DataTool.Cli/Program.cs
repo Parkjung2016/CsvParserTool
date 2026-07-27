@@ -40,23 +40,29 @@ namespace DataTool.Cli
 
         private static void PrintHelp()
         {
-            Console.WriteLine("DataTool — CLI (same pipeline as DataToolGUI)");
+            Console.WriteLine("DataTool CLI — GUI와 동일한 검증·Export 파이프라인");
             Console.WriteLine();
-            Console.WriteLine("  DataTool export --project <dir> [--excel <xlsxSourceDir>] [--refresh-xlsx] [--version 1.0.0] [--no-orphan-cleanup] [--engine unity|unreal]");
+            Console.WriteLine("사용법:");
+            Console.WriteLine("  DataTool.exe export --project <프로젝트 루트> [옵션]");
             Console.WriteLine();
-            Console.WriteLine("  --project      Unity 또는 Unreal 프로젝트 루트.");
-            Console.WriteLine("  --engine       unity 또는 unreal (기본값: unity).");
-            Console.WriteLine("  --excel        XLSX source folder (optional; used with --refresh-xlsx).");
-            Console.WriteLine("  --refresh-xlsx Run Excel→CSV for all .xlsx in --excel before export.");
-            Console.WriteLine("  --version      Export version; columns with version <= this are included (default: all if omitted).");
-            Console.WriteLine("  --no-orphan-cleanup  Keep CSV/Bytes/Container (and .meta) not listed in --excel.");
-            Console.WriteLine("  Exports DT_* → DataTables\\Content\\CSV|Bytes, DataTables\\Scripts.");
+            Console.WriteLine("옵션:");
+            Console.WriteLine("  --project <경로>         Unity 또는 Unreal 프로젝트 루트 (필수)");
+            Console.WriteLine("  --engine unity|unreal    Export 엔진 (기본값: unity)");
+            Console.WriteLine("  --excel <경로>           DT_*.xlsx 원본 폴더");
+            Console.WriteLine("  --refresh-xlsx           XLSX 원본 검사 및 원본 없는 산출물 정리 실행");
+            Console.WriteLine("  --version <버전>         이 버전 이하의 컬럼만 포함 (예: 1.0.0, 생략 시 전체)");
+            Console.WriteLine("  --no-orphan-cleanup      원본 XLSX가 없는 기존 산출물 유지");
+            Console.WriteLine("  --no-unreal-import       Unreal C++만 생성하고 컴파일·UDataTable Import 생략");
+            Console.WriteLine("  -h, --help               도움말 표시");
             Console.WriteLine();
-            Console.WriteLine("Examples:");
-            Console.WriteLine("  DataTool export --project C:\\Game --excel C:\\tables --refresh-xlsx");
-            Console.WriteLine("  DataTool export --project C:\\Game");
+            Console.WriteLine("Unity 예시:");
+            Console.WriteLine("  DataTool.exe export --engine unity --project C:\\Game\\MyUnityProject --excel C:\\Data\\Xlsx --refresh-xlsx --version 1.0.0");
+            Console.WriteLine();
+            Console.WriteLine("Unreal 예시:");
+            Console.WriteLine("  DataTool.exe export --engine unreal --project C:\\Game\\MyUnrealProject --excel C:\\Data\\Xlsx --refresh-xlsx --version 1.0.0");
+            Console.WriteLine();
+            Console.WriteLine("종료 코드: 0=성공, 1=옵션·검증·Export 실패");
         }
-
         private static Dictionary<string, string> ParseArgs(string[] args, int start)
         {
             var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -90,10 +96,23 @@ namespace DataTool.Cli
             opt.TryGetValue("version", out string exportVersion);
             bool refresh = opt.ContainsKey("refresh-xlsx");
             bool removeOrphanArtifacts = !opt.ContainsKey("no-orphan-cleanup");
+            bool autoImportUnrealDataTables = !opt.ContainsKey("no-unreal-import");
             opt.TryGetValue("engine", out string engine);
-            ExportPlatform platform = string.Equals(engine, "unreal", StringComparison.OrdinalIgnoreCase)
-                ? ExportPlatform.Unreal
-                : ExportPlatform.Unity;
+            ExportPlatform platform;
+            if (string.IsNullOrWhiteSpace(engine)
+                || string.Equals(engine, "unity", StringComparison.OrdinalIgnoreCase))
+            {
+                platform = ExportPlatform.Unity;
+            }
+            else if (string.Equals(engine, "unreal", StringComparison.OrdinalIgnoreCase))
+            {
+                platform = ExportPlatform.Unreal;
+            }
+            else
+            {
+                Console.Error.WriteLine("Invalid --engine value. Use unity or unreal: " + engine);
+                return 1;
+            }
 
             var result = DataExportService.RunExport(
                 project,
@@ -102,7 +121,8 @@ namespace DataTool.Cli
                 line => Console.WriteLine(line),
                 exportVersion: exportVersion,
                 removeOrphanArtifacts: removeOrphanArtifacts,
-                exportPlatform: platform);
+                exportPlatform: platform,
+                autoImportUnrealDataTables: autoImportUnrealDataTables);
 
             if (!result.Ok)
             {

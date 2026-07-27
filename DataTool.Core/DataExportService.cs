@@ -61,7 +61,8 @@ namespace CSVParserTool
             string exportVersion = null,
             bool removeOrphanArtifacts = true,
             IReadOnlyCollection<string> selectedTableStems = null,
-            ExportPlatform exportPlatform = ExportPlatform.Unity)
+            ExportPlatform exportPlatform = ExportPlatform.Unity,
+            bool autoImportUnrealDataTables = true)
         {
             void Report(
                 DataExportProgressKind kind,
@@ -118,6 +119,15 @@ namespace CSVParserTool
                 return Fail(ex.Message);
             }
 
+            if (exportTarget.Platform == ExportPlatform.Unreal)
+            {
+                IReadOnlyList<UnrealEditorProcessInfo> runningEditors =
+                    UnrealEditorProcessGuard.FindRunningEditors(targetLayout.ProjectName);
+                if (runningEditors.Count > 0)
+                    return Fail("USTRUCT/UENUM 헤더를 안전하게 생성하려면 Unreal Editor를 종료해야 합니다. 실행 중: "
+                        + UnrealEditorProcessGuard.Describe(runningEditors));
+            }
+
             string trimmedExportVersion = exportVersion?.Trim();
             if (!string.IsNullOrEmpty(trimmedExportVersion) && !DataVersion.TryParse(trimmedExportVersion, out _))
                 return Fail($"Export 버전 '{trimmedExportVersion}' 형식이 올바르지 않습니다. (예: 1.0.0)");
@@ -131,11 +141,14 @@ namespace CSVParserTool
                 {
                     Report(DataExportProgressKind.PhaseChanged, phaseLabel: "XLSX 원본 검사", phaseIndex: 0);
                     string csvDir = targetLayout.StagingCsvDirectory;
-                    Directory.CreateDirectory(csvDir);
+                    if (exportTarget.Platform == ExportPlatform.Unity)
+                        Directory.CreateDirectory(csvDir);
                     int sourceCount = selectedOnly
                         ? xlsxDtStems.Count(stem => selectedStems.Contains(stem))
                         : xlsxDtStems.Count;
-                    log?.Invoke($"XLSX 원본 {sourceCount}개 검사 준비. 검증 완료 후 런타임 CSV를 생성합니다.");
+                    log?.Invoke(exportTarget.Platform == ExportPlatform.Unreal
+                        ? $"XLSX 원본 {sourceCount}개 검사 준비. 검증 완료 후 메모리에서 UDataTable을 생성합니다."
+                        : $"XLSX 원본 {sourceCount}개 검사 준비. 검증 완료 후 런타임 CSV를 생성합니다.");
 
                     if (removeOrphanArtifacts && xlsxDtStems != null && xlsxDtStems.Count > 0)
                     {
@@ -157,7 +170,6 @@ namespace CSVParserTool
             }
 
             string dataCsv = targetLayout.StagingCsvDirectory;
-            Directory.CreateDirectory(dataCsv);
 
             try
             {
@@ -172,14 +184,19 @@ namespace CSVParserTool
                     : Path.GetFileNameWithoutExtension(enumWorkbookPath);
 
                 Directory.CreateDirectory(scriptsDir);
-                Directory.CreateDirectory(dataCsv);
-                Directory.CreateDirectory(bytesDir);
+                if (exportTarget.Platform == ExportPlatform.Unity)
+                {
+                    Directory.CreateDirectory(dataCsv);
+                    Directory.CreateDirectory(bytesDir);
+                }
 
                 // XLSX가 있으면 런타임 폴더에 중간 CSV를 만들지 않고 원본을 직접 검증한다.
                 // 모든 검사가 끝난 뒤 ExportSingleTable이 최종 헤더·데이터 행만 CSV로 기록한다.
-                string[] existingCsvFiles = Directory.GetFiles(dataCsv, "*.csv")
-                    .Where(p => Path.GetFileName(p).StartsWith("DT_", StringComparison.OrdinalIgnoreCase))
-                    .ToArray();
+                string[] existingCsvFiles = Directory.Exists(dataCsv)
+                    ? Directory.GetFiles(dataCsv, "*.csv")
+                        .Where(p => Path.GetFileName(p).StartsWith("DT_", StringComparison.OrdinalIgnoreCase))
+                        .ToArray()
+                    : Array.Empty<string>();
                 string[] csvFiles;
                 if (hasXlsxSource)
                 {
@@ -277,6 +294,15 @@ namespace CSVParserTool
                 // 선택하지 않은 테이블도 읽어 참조 대상과 Id가 올바른지 함께 검증한다.
                 CrossTableReferenceResolver.Resolve(parseResults);
                 EnumCatalogService.ApplyToTables(enumCatalog, parseResults);
+                if (exportTarget.Platform == ExportPlatform.Unreal)
+                    UnrealCodeGenerator.ValidateForExport(enumCatalog, parseResults);
+                IReadOnlyDictionary<string, string> unrealEnumTypeNames =
+                    exportTarget.Platform == ExportPlatform.Unreal
+                        ? UnrealCodeGenerator.CreateEnumTypeNameMap(
+                            (enumCatalog?.DeclarationOrder ?? Array.Empty<string>())
+                                .Concat(parseResults.SelectMany(result => result.EnumMembers.Keys)))
+                        : null;
+
                 ParallelBatchRunner.ForEach(
                     csvFiles,
                     csvPath =>
@@ -287,7 +313,8 @@ namespace CSVParserTool
                             scriptsDir,
                             bytesDir,
                             exportTarget.Platform,
-                            targetLayout.ProjectName);
+                            targetLayout.ModuleName,
+                            unrealEnumTypeNames);
                         outcomes.Add(outcome);
 
                         if (outcome.LogLines != null)
@@ -439,7 +466,20 @@ namespace CSVParserTool
                 }
                 else
                 {
-                    WriteUnrealImportManifest(targetLayout, runtimeTables, log);
+                    RemoveUnrealIntermediateArtifacts(targetLayout, log);
+                    UnrealRuntimeStorageGenerator.Write(targetLayout, runtimeTables, log);
+                    if (autoImportUnrealDataTables)
+                    {
+                        Report(
+                            DataExportProgressKind.PhaseChanged,
+                            phaseLabel: "Unreal C++ 컴파일 및 UDataTable Import",
+                            phaseIndex: 2);
+                        UnrealDataTableImporter.CompileAndImport(targetLayout, runtimeTables, log);
+                    }
+                    else
+                    {
+                        log?.Invoke("Unreal UDataTable 자동 Import 생략.");
+                    }
                 }
 
                 string summary = exportTarget.Platform == ExportPlatform.Unity
@@ -448,9 +488,12 @@ namespace CSVParserTool
                       $"· CSV/Bytes: {targetLayout.StagingCsvDirectory} · {targetLayout.RuntimeDataDirectory}\r\n" +
                       "· Unity: Container + InfoStorage + MessagePack 런타임 생성"
                     : $"{(selectedOnly ? "선택 Export" : "전체 Export")} 완료 ({ok}개 테이블)\r\n" +
-                      $"· Unreal Headers: {scriptsDir}\r\n" +
-                      $"· Import CSV: {targetLayout.StagingCsvDirectory}\r\n" +
-                      $"· Import Manifest: {targetLayout.RuntimeDataDirectory}";
+                      $"· C++ Headers (IDE / C++ Classes): {scriptsDir}\r\n" +
+                      "· Content Browser 표시 위치: /Game/PJDevData/DataTables\r\n" +
+                      "· C++ 구조: UGlobalDataStorage 원본 + IInfoStorage 가공 Registry\r\n" +
+                      (autoImportUnrealDataTables
+                          ? "· 중간 CSV/JSON 없이 C++ 컴파일 및 UDataTable 자동 생성·갱신 완료"
+                          : "· UDataTable 자동 Import 생략");
                 Report(
                     DataExportProgressKind.Finished,
                     phaseLabel: "Export 완료",
@@ -515,6 +558,32 @@ namespace CSVParserTool
             }
             return removed;
         }
+
+        private static void RemoveUnrealIntermediateArtifacts(
+            ExportTargetLayout layout,
+            Action<string> log)
+        {
+            string legacyRoot = Path.Combine(
+                layout.ProjectRoot,
+                "Content",
+                "PJDevData",
+                "DataTables",
+                "Source");
+            string legacyManifest = Path.Combine(legacyRoot, "DataToolImportManifest.json");
+            if (File.Exists(legacyManifest))
+            {
+                Directory.Delete(legacyRoot, true);
+                log?.Invoke("Removed legacy Unreal import sources from Content: " + legacyRoot);
+            }
+
+            string savedRoot = Path.Combine(layout.ProjectRoot, "Saved", "PJDevDataTool");
+            if (Directory.Exists(savedRoot))
+            {
+                Directory.Delete(savedRoot, true);
+                log?.Invoke("Removed obsolete Unreal intermediate files: " + savedRoot);
+            }
+        }
+
         private static bool TargetGeneratedTableExists(
             string scriptsDir,
             CsvTableParseResult table,
@@ -549,36 +618,6 @@ namespace CSVParserTool
             return unrealPath;
         }
 
-        private static void WriteUnrealImportManifest(
-            ExportTargetLayout layout,
-            IReadOnlyList<CsvTableParseResult> tables,
-            Action<string> log)
-        {
-            Directory.CreateDirectory(layout.RuntimeDataDirectory);
-            var builder = new StringBuilder(1024);
-            builder.AppendLine("{");
-            builder.AppendLine("  \"formatVersion\": 1,");
-            builder.AppendLine($"  \"project\": \"{layout.ProjectName}\",");
-            builder.AppendLine("  \"tables\": [");
-            for (int i = 0; i < tables.Count; i++)
-            {
-                CsvTableParseResult table = tables[i];
-                string stem = table.ClassName.EndsWith("Data", StringComparison.Ordinal)
-                    ? table.ClassName.Substring(0, table.ClassName.Length - 4)
-                    : table.ClassName;
-                builder.Append("    { \"name\": \"").Append(table.ClassName)
-                    .Append("\", \"csv\": \"DT_").Append(stem)
-                    .Append(".csv\", \"rowHeader\": \"")
-                    .Append(UnrealCodeGenerator.GetRowHeaderFileName(table)).Append("\" }");
-                builder.AppendLine(i + 1 < tables.Count ? "," : string.Empty);
-            }
-            builder.AppendLine("  ]");
-            builder.AppendLine("}");
-
-            string path = Path.Combine(layout.RuntimeDataDirectory, "DataToolImportManifest.json");
-            GeneratedFileWriter.WriteAllTextIfChanged(path, builder.ToString(), new UTF8Encoding(false));
-            log?.Invoke("Unreal Import Manifest: " + path);
-        }
         private sealed class TableExportOutcome
         {
             public bool Success;
@@ -595,7 +634,8 @@ namespace CSVParserTool
             string scriptsDir,
             string bytesDir,
             ExportPlatform exportPlatform,
-            string projectName)
+            string projectName,
+            IReadOnlyDictionary<string, string> unrealEnumTypeNames)
         {
             var outcome = new TableExportOutcome
             {
@@ -612,11 +652,11 @@ namespace CSVParserTool
             {
                 outcome.ParseResult = table;
 
-                CsvTableParser.WriteDeployedCsv(csvPath, table);
-                outcome.LogLines.Add($"CSV: {csvPath}");
-
                 if (exportPlatform == ExportPlatform.Unity)
                 {
+                    CsvTableParser.WriteDeployedCsv(csvPath, table);
+                    outcome.LogLines.Add($"CSV: {csvPath}");
+
                     string csPath = Path.Combine(scriptsDir, classFileName + "Container.cs");
                     GeneratedFileWriter.WriteAllTextIfChanged(csPath, CsvClassGenerator.GenerateTableContainerFile(table), Encoding.UTF8);
                     outcome.LogLines.Add($"Script: {csPath}");
@@ -630,7 +670,7 @@ namespace CSVParserTool
                     string headerPath = Path.Combine(scriptsDir, UnrealCodeGenerator.GetRowHeaderFileName(table));
                     GeneratedFileWriter.WriteAllTextIfChanged(
                         headerPath,
-                        UnrealCodeGenerator.GenerateRowHeader(table, projectName),
+                        UnrealCodeGenerator.GenerateRowHeader(table, projectName, unrealEnumTypeNames),
                         new UTF8Encoding(false));
                     outcome.LogLines.Add($"Unreal Header: {headerPath}");
                 }

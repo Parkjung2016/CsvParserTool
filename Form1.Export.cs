@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -51,6 +51,8 @@ namespace CSVParserTool
             }
 
             if (!TrySaveExportVersionSetting(showWarning: true))
+                return;
+            if (!EnsureUnrealEditorClosedBeforeExport())
                 return;
 
             if (!CheckDataSettingAvailable(out string reason, willRefreshExcelToCsvFirst: refresh))
@@ -124,6 +126,40 @@ namespace CSVParserTool
             {
                 Btn_DataSetting.Enabled = true;
                 Btn_ExportSelected.Enabled = true;
+            }
+        }
+
+        private bool EnsureUnrealEditorClosedBeforeExport()
+        {
+            if (currentExportPlatform != ExportPlatform.Unreal
+                || !TryGetCurrentTargetLayout(out ExportTargetLayout layout))
+            {
+                return true;
+            }
+
+            while (true)
+            {
+                IReadOnlyList<UnrealEditorProcessInfo> editors =
+                    UnrealEditorProcessGuard.FindRunningEditors(layout.ProjectName);
+                if (editors.Count == 0)
+                    return true;
+
+                string message =
+                    "Unreal Editor가 실행 중입니다. USTRUCT/UENUM 리플렉션 헤더는 Editor가 열린 상태에서 안전하게 변경할 수 없습니다.\r\n\r\n" +
+                    "작업을 저장하고 Unreal Editor를 종료한 다음 「다시 시도」를 누르세요.\r\n강제 종료는 하지 않습니다.\r\n\r\n" +
+                    UnrealEditorProcessGuard.Describe(editors);
+                DialogResult result = MessageBox.Show(
+                    this,
+                    message,
+                    "Unreal Export 안전 확인",
+                    MessageBoxButtons.RetryCancel,
+                    MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button1);
+                if (result == DialogResult.Retry)
+                    continue;
+
+                AddLog("Unreal Editor가 실행 중이어서 Export를 취소했습니다.", LogLevel.Warning);
+                return false;
             }
         }
 
@@ -382,6 +418,12 @@ namespace CSVParserTool
         private void ResetExportSteps()
         {
             SegmentedExportProgress_Export.Reset();
+            SetExportStep(
+                2,
+                SegmentedPhaseState.Pending,
+                currentExportPlatform == ExportPlatform.Unreal
+                    ? "Unreal · Build + UDataTable"
+                    : "Unity · MessagePack");
         }
 
         private void SetExportStep(int stepIndex, SegmentedPhaseState state, string caption = null)

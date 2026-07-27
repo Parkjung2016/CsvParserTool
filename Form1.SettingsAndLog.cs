@@ -66,9 +66,14 @@ namespace CSVParserTool
 
                     UITheme.UpdatePathLabel(Label_ProjectRoot, projectRootPath);
 
+                    ExportTargetLayout layout = target.CreateLayout(projectRootPath);
+                    string outputDetail = currentExportPlatform == ExportPlatform.Unity
+                        ? $"→ Import 원본: {layout.StagingCsvDirectory}"
+                        : "→ UDataTable: /Game/PJDevData/DataTables (중간 CSV/JSON 없음)";
                     AddLog(
                         $"프로젝트 루트: {projectRootPath}\n" +
-                        "→ 출력: DataTables\\Content\\CSV·Bytes, DataTables\\Scripts",
+                        $"→ 생성 코드: {layout.GeneratedCodeDirectory}\n" +
+                        outputDetail,
                         LogLevel.Info);
                     ReloadDataFileList();
                     InitDirectoryWatchers();
@@ -226,7 +231,7 @@ namespace CSVParserTool
             }
             catch (Exception ex)
             {
-                AddLog($"출력(Datas) 폴더 준비 실패: {ex.Message}", LogLevel.Error);
+                AddLog($"출력 폴더 준비 실패: {ex.Message}", LogLevel.Error);
                 return;
             }
 
