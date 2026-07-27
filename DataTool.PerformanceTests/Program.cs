@@ -24,8 +24,9 @@ internal static class Program
         Check("Unchanged generated file keeps timestamp", UnchangedFileKeepsTimestamp);
         Check("Repeated XLSX preview uses cache", RepeatedPreviewUsesCache);
         Check("Unity and Unreal targets resolve stable layouts", EngineTargetLayouts);
+        Check("Unity and Unreal cleanup removes only generated artifacts", CleanupGeneratedArtifacts);
         Check("Unreal row header maps common types", UnrealRowHeaderGeneration);
-        Check("Unreal export writes C++ without intermediate files", UnrealExportArtifacts);
+        Check("Unreal export writes current C++ artifacts", UnrealExportArtifacts);
         Check("Unreal XLSX preview uses the export header generator", UnrealXlsxPreview);
         Check("Enum catalog is case-sensitive and Unreal collisions fail", EnumCatalogIsCaseSensitive);
         Console.WriteLine(failures == 0 ? "PASS" : $"FAIL ({failures})");
@@ -50,6 +51,64 @@ internal static class Program
         );
     }
 
+    private static void CleanupGeneratedArtifacts()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "DataToolCleanup_" + Guid.NewGuid().ToString("N"));
+        string unityRoot = Path.Combine(root, "UnityGame");
+        string unrealRoot = Path.Combine(root, "UnrealGame");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(unityRoot, "Assets"));
+            Directory.CreateDirectory(Path.Combine(unityRoot, "ProjectSettings"));
+            string unityGenerated = DataProjectPaths.GameDatasDir(unityRoot);
+            Directory.CreateDirectory(Path.Combine(unityGenerated, "Scripts"));
+            File.WriteAllText(Path.Combine(unityGenerated, "Scripts", "Generated.cs"), "// generated");
+            File.WriteAllText(unityGenerated + ".meta", "meta");
+            string unityKeep = Path.Combine(unityRoot, "Assets", "Keep.txt");
+            File.WriteAllText(unityKeep, "keep");
+
+            DataExportCleanupPlan unityPlan = DataExportCleanupService.CreatePlan(unityRoot, ExportPlatform.Unity);
+            DataExportCleanupResult unityResult = DataExportCleanupService.Execute(unityPlan);
+            if (Directory.Exists(unityGenerated) || File.Exists(unityGenerated + ".meta") || !File.Exists(unityKeep)
+                || unityResult.RemovedDirectoryCount != 1 || unityResult.RemovedFileCount != 1)
+            {
+                throw new InvalidOperationException("Unity cleanup scope mismatch.");
+            }
+
+            CreateUnrealProject(unrealRoot, "CleanupProject", "CleanupGame");
+            ExportTargetLayout unrealLayout = EngineExportTargetRegistry.Get(ExportPlatform.Unreal).CreateLayout(unrealRoot);
+            Directory.CreateDirectory(unrealLayout.GeneratedCodeDirectory);
+            Directory.CreateDirectory(unrealLayout.GeneratedEditorCodeDirectory);
+            File.WriteAllText(Path.Combine(unrealLayout.GeneratedCodeDirectory, "TestRow.h"), "// generated");
+            File.WriteAllText(Path.Combine(unrealLayout.GeneratedEditorCodeDirectory, "GlobalDataStorage.cpp"), "// generated");
+            string contentRoot = Path.Combine(unrealRoot, "Content", "PJDevData", "DataTables");
+            Directory.CreateDirectory(contentRoot);
+            File.WriteAllText(Path.Combine(contentRoot, "DT_Test.uasset"), "generated");
+            string savedRoot = Path.Combine(unrealRoot, "Saved", "PJDevDataTool");
+            Directory.CreateDirectory(savedRoot);
+            File.WriteAllText(Path.Combine(savedRoot, "temp.json"), "{}");
+            string unrealKeep = Path.Combine(unrealRoot, "Source", "CleanupGame", "Public", "Keep.h");
+            Directory.CreateDirectory(Path.GetDirectoryName(unrealKeep));
+            File.WriteAllText(unrealKeep, "// keep");
+
+            DataExportCleanupPlan unrealPlan = DataExportCleanupService.CreatePlan(unrealRoot, ExportPlatform.Unreal);
+            DataExportCleanupResult unrealResult = DataExportCleanupService.Execute(unrealPlan);
+            if (Directory.Exists(unrealLayout.GeneratedCodeDirectory)
+                || Directory.Exists(unrealLayout.GeneratedEditorCodeDirectory)
+                || Directory.Exists(Path.Combine(unrealRoot, "Content", "PJDevData"))
+                || Directory.Exists(savedRoot)
+                || !File.Exists(unrealKeep)
+                || unrealResult.RemovedDirectoryCount != 3)
+            {
+                throw new InvalidOperationException("Unreal cleanup scope mismatch.");
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, true);
+        }
+    }
     private static void EngineTargetLayouts()
     {
         string root = Path.Combine(Path.GetTempPath(), "DataToolTargets_" + Guid.NewGuid().ToString("N"));
@@ -70,7 +129,7 @@ internal static class Program
             if (unrealLayout.ProjectName != "ProjectR"
                 || unrealLayout.ModuleName != "GameplayCore"
                 || !unrealLayout.GeneratedCodeDirectory.EndsWith(
-                    Path.Combine("Source", "GameplayCore", "Public", "DataTables", "Generated"),
+                    Path.Combine("Source", "GameplayCore", "DataTables", "Generated"),
                     StringComparison.OrdinalIgnoreCase)
                 || !unrealLayout.StagingCsvDirectory.EndsWith(
                     Path.Combine("Saved", "PJDevDataTool", "Source", "CSV"),
@@ -90,7 +149,6 @@ internal static class Program
         {
             CreateUnrealProject(root, "ProjectR", "GameplayCore");
             ExportTargetLayout layout = EngineExportTargetRegistry.Get(ExportPlatform.Unreal).CreateLayout(root);
-            Directory.CreateDirectory(layout.StagingCsvDirectory);
             string excelRoot = Path.Combine(root, "Excel");
             Directory.CreateDirectory(excelRoot);
             using (var enumWorkbook = new XLWorkbook())
@@ -117,15 +175,6 @@ internal static class Program
                 tableSheet.Cell(4, 2).Value = "Value";
                 tableWorkbook.SaveAs(Path.Combine(excelRoot, "DT_Character.xlsx"));
             }
-            File.WriteAllLines(
-                Path.Combine(layout.StagingCsvDirectory, "DT_Character.csv"),
-                new[]
-                {
-                    "Id,Mode",
-                    "1.0.0,1.0.0",
-                    "int,enum:Test",
-                    "1,Value"
-                });
 
             DataExportResult result = DataExportService.RunExport(
                 root,
@@ -156,8 +205,6 @@ internal static class Program
                     $"enums={File.Exists(enums)}, files={string.Join(",", Directory.GetFiles(root, "*", SearchOption.AllDirectories))}");
             if (Directory.GetFiles(layout.GeneratedCodeDirectory, "*Container.cs").Length != 0)
                 throw new InvalidOperationException("Unity Container was generated for Unreal.");
-            if (Directory.Exists(Path.Combine(root, "Saved", "PJDevDataTool")))
-                throw new InvalidOperationException("Unreal intermediate CSV/JSON directory was left behind.");
 
             string headerText = File.ReadAllText(header);
             string enumText = File.ReadAllText(enums);

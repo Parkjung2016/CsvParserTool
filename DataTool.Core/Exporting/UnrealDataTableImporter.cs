@@ -50,7 +50,7 @@ namespace CSVParserTool.Exporting
                 log?.Invoke("Unreal Commandlet: 메모리 데이터로 UDataTable 생성 및 갱신 시작");
                 RunEditorCommandlet(engine, projectFile, scriptPath, layout.ProjectRoot, log);
                 int importedCount = ReadImportResult(resultPath);
-                log?.Invoke($"Unreal UDataTable Import 완료: {importedCount}개 (중간 CSV/JSON 없음)");
+                log?.Invoke($"Unreal UDataTable Import 완료: {importedCount}개");
                 return importedCount;
             }
             finally

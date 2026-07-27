@@ -413,8 +413,7 @@ namespace CSVParserTool
             if (IsUnreal)
             {
                 Bullet(".uproject 파일이 하나 있는 Unreal 프로젝트 루트를 선택합니다.");
-                Bullet("C++ 헤더: Source/{Module}/Public/DataTables/Generated");
-                Bullet("C++ 구현: Source/{Module}/Private/DataTables/Generated");
+                Bullet("C++ 코드: Source/{Module}/DataTables/Generated (헤더와 cpp를 한 폴더에서 관리)");
                 Bullet("UDataTable: Content/PJDevData/DataTables");
                 Note("중간 CSV·JSON은 프로젝트에 남기지 않습니다. Content Browser에는 최종 UDataTable만 표시됩니다.");
             }
@@ -533,7 +532,7 @@ namespace CSVParserTool
             if (IsUnreal)
             {
                 Subheading("Unreal 생성 결과");
-                Bullet("Source/{Module}/Public/DataTables/Generated에 UENUM·USTRUCT Row 헤더를 생성합니다.");
+                Bullet("Source/{Module}/DataTables/Generated 한 폴더에 UENUM·USTRUCT 헤더와 cpp를 생성합니다.");
                 Bullet("GlobalDataStorage와 InfoStorage 프레임워크를 생성하고 Editor 타깃을 컴파일합니다.");
                 Bullet("XLSX 데이터를 메모리에서 UDataTable로 변환하여 /Game/PJDevData/DataTables에 저장합니다.");
                 Bullet("프로젝트에는 중간 CSV나 JSON을 남기지 않습니다.");
@@ -549,6 +548,7 @@ namespace CSVParserTool
                 Bullet("GlobalDataContainer.LoadAllAsync()가 원본 테이블과 등록한 InfoStorage를 순서대로 로드합니다.");
                 Note("UniTask가 없으면 동기 API인 LoadAll()이 생성됩니다.");
             }
+            Bullet("하단 '모두 정리' 버튼은 현재 엔진에서 Data Tool이 만든 코드와 데이터 폴더를 확인 후 한 번에 삭제합니다. XLSX 원본은 유지됩니다.");
             Note("참조 대상 컬럼이 현재 Export 버전에서 제외되면 참조 오류로 처리됩니다.");
         }
         private void RenderCodeUsage()

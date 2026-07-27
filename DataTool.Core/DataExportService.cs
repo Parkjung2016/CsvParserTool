@@ -466,7 +466,6 @@ namespace CSVParserTool
                 }
                 else
                 {
-                    RemoveUnrealIntermediateArtifacts(targetLayout, log);
                     UnrealRuntimeStorageGenerator.Write(targetLayout, runtimeTables, log);
                     if (autoImportUnrealDataTables)
                     {
@@ -492,7 +491,7 @@ namespace CSVParserTool
                       "· Content Browser 표시 위치: /Game/PJDevData/DataTables\r\n" +
                       "· C++ 구조: UGlobalDataStorage 원본 + IInfoStorage 가공 Registry\r\n" +
                       (autoImportUnrealDataTables
-                          ? "· 중간 CSV/JSON 없이 C++ 컴파일 및 UDataTable 자동 생성·갱신 완료"
+                          ? "· C++ 컴파일 및 UDataTable 자동 생성·갱신 완료"
                           : "· UDataTable 자동 Import 생략");
                 Report(
                     DataExportProgressKind.Finished,
@@ -557,31 +556,6 @@ namespace CSVParserTool
                 }
             }
             return removed;
-        }
-
-        private static void RemoveUnrealIntermediateArtifacts(
-            ExportTargetLayout layout,
-            Action<string> log)
-        {
-            string legacyRoot = Path.Combine(
-                layout.ProjectRoot,
-                "Content",
-                "PJDevData",
-                "DataTables",
-                "Source");
-            string legacyManifest = Path.Combine(legacyRoot, "DataToolImportManifest.json");
-            if (File.Exists(legacyManifest))
-            {
-                Directory.Delete(legacyRoot, true);
-                log?.Invoke("Removed legacy Unreal import sources from Content: " + legacyRoot);
-            }
-
-            string savedRoot = Path.Combine(layout.ProjectRoot, "Saved", "PJDevDataTool");
-            if (Directory.Exists(savedRoot))
-            {
-                Directory.Delete(savedRoot, true);
-                log?.Invoke("Removed obsolete Unreal intermediate files: " + savedRoot);
-            }
         }
 
         private static bool TargetGeneratedTableExists(

@@ -39,7 +39,7 @@ Engine Export Target
 - `UnrealEngineExportTarget`
   - 프로젝트 표식: 루트의 단일 `.uproject`
   - 기본 런타임 모듈: `.uproject`의 `Modules`와 `Source/**/*.Build.cs`를 함께 검사
-  - 공개 헤더: `Source/{ModuleName}/Public/DataTables/Generated`
+  - 생성 C++: `Source/{ModuleName}/DataTables/Generated` (헤더와 cpp 통합)
   - 중간 데이터: 파일을 생성하지 않고 메모리 CSV 문자열로 Commandlet에 전달
   - Import 대상 패키지: `/Game/PJDevData/DataTables`
 
@@ -56,7 +56,7 @@ UI와 CLI는 경로를 직접 조립하지 않고 `EngineExportTargetRegistry`�
 테이블마다 다음 파일을 생성한다.
 
 - `{Table}Row.h`: `UENUM`, `USTRUCT(BlueprintType)`, `FTableRowBase` (UHT가 `.generated.h` 생성)
-- `GlobalDataStorage.h/.cpp`: GameInstance 단위 자동 로드와 타입 안전 조회
+- `GlobalDataStorage.h/.cpp`: 같은 Generated 폴더에 생성되는 GameInstance 단위 자동 로드와 타입 안전 조회
 - `InfoStorage.h`: 여러 원본 테이블을 게임용 데이터로 가공하는 `IInfoStorage`와 자동 Registry
 
 타입 매핑:
@@ -87,7 +87,7 @@ Unreal 리플렉션 이름은 대소문자만 다른 식별자를 구분하지 �
 
 리플렉션 대상 `USTRUCT`/`UENUM` 헤더가 바뀌는 동안에는 해당 프로젝트의 Unreal Editor를 닫아야 한다. GUI는 실행 중인 Editor를 감지하면 저장 후 종료하도록 안내하고, CLI/Core Export는 오류로 중단한다. 저장하지 않은 작업을 보호하기 위해 프로세스를 강제 종료하지 않는다.
 
-`Source/{ModuleName}/Public`의 `.h`는 C++ 코드이므로 일반 Content Browser 에셋 목록에 표시되지 않는다. IDE 또는 Content Browser의 `C++ Classes` 표시 옵션에서 확인하며, 정상 컴파일이 끝나야 갱신된다. CSV와 manifest JSON은 프로젝트에 생성하지 않는다. `Content`에는 Import가 끝난 `.uasset` 형태의 `UDataTable`만 표시되므로 Editor 시작 시 CSV/JSON Import 안내가 반복되지 않는다.
+`Source/{ModuleName}/DataTables/Generated`의 `.h`는 C++ 코드이므로 일반 Content Browser 에셋 목록에 표시되지 않는다. IDE 또는 Content Browser의 `C++ Classes` 표시 옵션에서 확인하며, 정상 컴파일이 끝나야 갱신된다. `Content/PJDevData/DataTables`에는 바로 사용할 수 있는 `.uasset` 형태의 `UDataTable`이 생성된다.
 
 CLI에서 C++ 코드만 생성해야 하는 특수한 경우에는 `--no-unreal-import`를 사용한다. GUI와 일반 CLI Export는 자동 Import가 기본값이다.
 

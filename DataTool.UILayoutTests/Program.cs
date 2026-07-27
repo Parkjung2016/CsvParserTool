@@ -214,7 +214,7 @@ internal static class Program
     }
     static void CheckKeyBounds(Form1 form, string state)
     {
-        string[] names = { "Panel_Header", "Panel_Top", "Panel_MainContent", "Panel_Bottom", "Panel_ListCard", "Panel_PreviewCard", "Panel_LogSection", "Btn_DataSetting", "Btn_EngineTarget", "Btn_SelectProjectRoot", "Btn_SelectExcelFolder", "Btn_NewCsv", "Btn_RefreshList" };
+        string[] names = { "Panel_Header", "Panel_Top", "Panel_MainContent", "Panel_Bottom", "Panel_ListCard", "Panel_PreviewCard", "Panel_LogSection", "Btn_DataSetting", "Btn_EngineTarget", "Btn_SelectProjectRoot", "Btn_SelectExcelFolder", "Btn_NewCsv", "Btn_CleanupAll", "Btn_RefreshList" };
         foreach (string name in names)
         {
             Control c = Find(form, name); if (c == null) { Fail("Missing control", name); continue; }

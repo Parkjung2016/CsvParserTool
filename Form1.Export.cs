@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -70,8 +70,10 @@ namespace CSVParserTool
                 return;
             }
 
+            exportInProgress = true;
             Btn_DataSetting.Enabled = false;
             Btn_ExportSelected.Enabled = false;
+            Btn_CleanupAll.Enabled = false;
             try
             {
                 BeginExportProgressUI();
@@ -124,8 +126,10 @@ namespace CSVParserTool
             }
             finally
             {
+                exportInProgress = false;
                 Btn_DataSetting.Enabled = true;
                 Btn_ExportSelected.Enabled = true;
+                Btn_CleanupAll.Enabled = true;
             }
         }
 

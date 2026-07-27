@@ -182,8 +182,8 @@ namespace CSVParserTool.Exporting
                 module.ModuleName,
                 Path.Combine(sourceDataRoot, "CSV"),
                 sourceDataRoot,
-                Path.Combine(module.ModuleRoot, "Public", "DataTables", "Generated"),
-                Path.Combine(module.ModuleRoot, "Private", "DataTables", "Generated"));
+                UnrealGeneratedSourceLayout.GetUnifiedDirectory(module.ModuleRoot),
+                UnrealGeneratedSourceLayout.GetUnifiedDirectory(module.ModuleRoot));
         }
 
         private static string FindProjectFile(string projectRoot)

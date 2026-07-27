@@ -39,6 +39,7 @@ namespace CSVParserTool
         private readonly Button Btn_CheckAll = new Button();
         private readonly Button Btn_UncheckAll = new Button();
         private readonly Button Btn_CloseExportResults = new Button();
+        private readonly Button Btn_CleanupAll = new Button();
         private readonly SplitContainer splitExportAndLog = new SplitContainer();
         private readonly TableLayoutPanel logHeaderLayout = new TableLayoutPanel();
         private bool exportResultSplitterInitialized;
@@ -61,6 +62,7 @@ namespace CSVParserTool
         private string exportVersion = "1.0.0";
         private ExportPlatform currentExportPlatform = ExportPlatform.Unity;
         private string lastWarnedInvalidExportVersion = string.Empty;
+        private bool exportInProgress;
 
         private bool TryGetCurrentTargetLayout(out ExportTargetLayout layout)
         {
@@ -134,6 +136,7 @@ namespace CSVParserTool
             InitializeExportResultControls();
             InitializeLogHeaderLayout();
             InitializeInfoButton();
+            InitializeCleanupButton();
             currentExportPlatform = ParseExportPlatform(ToolSettingsStore.ExportPlatformName);
             UpdateEngineTargetButton();
             exportLogFlushTimer.Tick += (_, __) => FlushPendingExportLogs();

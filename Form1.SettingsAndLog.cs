@@ -69,7 +69,7 @@ namespace CSVParserTool
                     ExportTargetLayout layout = target.CreateLayout(projectRootPath);
                     string outputDetail = currentExportPlatform == ExportPlatform.Unity
                         ? $"→ Import 원본: {layout.StagingCsvDirectory}"
-                        : "→ UDataTable: /Game/PJDevData/DataTables (중간 CSV/JSON 없음)";
+                        : "→ UDataTable: /Game/PJDevData/DataTables";
                     AddLog(
                         $"프로젝트 루트: {projectRootPath}\n" +
                         $"→ 생성 코드: {layout.GeneratedCodeDirectory}\n" +
@@ -212,6 +212,100 @@ namespace CSVParserTool
             }
         }
 
+        private async void Btn_CleanupAll_Click(object sender, EventArgs e)
+        {
+            if (exportInProgress)
+            {
+                MessageBox.Show(
+                    "Export가 끝난 뒤 다시 시도하세요.",
+                    "모두 정리",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            DataExportCleanupPlan plan;
+            try
+            {
+                plan = DataExportCleanupService.CreatePlan(projectRootPath, currentExportPlatform);
+            }
+            catch (Exception ex)
+            {
+                AddLog("정리 준비 실패: " + ex.Message, LogLevel.Error, suppressErrorDialog: true);
+                MessageBox.Show(ex.Message, "모두 정리", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            IReadOnlyList<string> existingPaths = plan.ExistingPaths;
+            if (existingPaths.Count == 0)
+            {
+                MessageBox.Show(
+                    "정리할 Data Tool 산출물이 없습니다.",
+                    "모두 정리",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            string relativePaths = string.Join(
+                Environment.NewLine,
+                existingPaths.Select(path => "• " + ToProjectRelativePath(plan.ProjectRoot, path)));
+            string engineName = currentExportPlatform == ExportPlatform.Unity ? "Unity" : "Unreal Engine";
+            DialogResult confirm = MessageBox.Show(
+                engineName + "에서 Data Tool이 만든 다음 산출물을 모두 삭제합니다."
+                + Environment.NewLine + Environment.NewLine
+                + relativePaths
+                + Environment.NewLine + Environment.NewLine
+                + "XLSX 원본과 위 경로 밖의 사용자 코드는 삭제하지 않습니다."
+                + Environment.NewLine
+                + "삭제한 파일은 복구할 수 없습니다. 계속할까요?",
+                "모두 정리",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (confirm != DialogResult.Yes)
+                return;
+
+            Btn_CleanupAll.Enabled = false;
+            Btn_DataSetting.Enabled = false;
+            Btn_ExportSelected.Enabled = false;
+            Btn_EngineTarget.Enabled = false;
+            Btn_SelectProjectRoot.Enabled = false;
+            try
+            {
+                var cleanupLogs = new List<string>();
+                DataExportCleanupResult result = await Task.Run(
+                    () => DataExportCleanupService.Execute(plan, cleanupLogs.Add));
+                foreach (string line in cleanupLogs)
+                    AddLog(line, LogLevel.Info);
+
+                string summary = $"{engineName} 산출물 모두 정리 완료 · 폴더 {result.RemovedDirectoryCount}개 · 파일 {result.RemovedFileCount}개";
+                AddLog(summary, LogLevel.Info);
+                MessageBox.Show(summary, "모두 정리", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                AddLog("모두 정리 실패: " + ex.Message, LogLevel.Error, suppressErrorDialog: true);
+                MessageBox.Show(ex.Message, "모두 정리 실패", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                Btn_CleanupAll.Enabled = true;
+                Btn_DataSetting.Enabled = true;
+                Btn_ExportSelected.Enabled = true;
+                Btn_EngineTarget.Enabled = true;
+                Btn_SelectProjectRoot.Enabled = true;
+            }
+        }
+
+        private static string ToProjectRelativePath(string projectRoot, string path)
+        {
+            string root = Path.GetFullPath(projectRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string fullPath = Path.GetFullPath(path);
+            if (fullPath.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                return fullPath.Substring(root.Length + 1);
+            return fullPath;
+        }
         private void Btn_OpenOutputFolder_Click(object sender, EventArgs e)
         {
             TryOpenFolderInExplorer(projectRootPath, "프로젝트 루트", (m, l) => AddLog(m, l));
@@ -221,17 +315,20 @@ namespace CSVParserTool
         {
             if (string.IsNullOrWhiteSpace(projectRootPath) || !Directory.Exists(projectRootPath))
             {
-                AddLog("먼저 「프로젝트 경로 지정」을 하세요.", LogLevel.Warning);
+                const string message = "프로젝트 경로가 없습니다.\r\n먼저 「프로젝트 경로 지정」을 해주세요.";
+                AddLog(message.Replace("\r\n", " "), LogLevel.Warning);
+                MessageBox.Show(this, message, "출력 폴더", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            try
+            if (string.IsNullOrWhiteSpace(gameDatasDir) || !Directory.Exists(gameDatasDir))
             {
-                Directory.CreateDirectory(gameDatasDir);
-            }
-            catch (Exception ex)
-            {
-                AddLog($"출력 폴더 준비 실패: {ex.Message}", LogLevel.Error);
+                string outputLabel = currentExportPlatform == ExportPlatform.Unity
+                    ? "Assets\\_Game\\DataTables"
+                    : "Content\\PJDevData\\DataTables";
+                string message = $"출력 폴더가 아직 없습니다.\r\n먼저 Export를 진행해주세요.\r\n\r\n{outputLabel}";
+                AddLog($"출력 폴더가 없습니다: {gameDatasDir}", LogLevel.Warning);
+                MessageBox.Show(this, message, "출력 폴더", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 

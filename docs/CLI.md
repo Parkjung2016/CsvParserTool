@@ -62,7 +62,7 @@ DataTool.exe export `
 기본 동작:
 
 1. XLSX와 모든 테이블 참조를 검증합니다.
-2. `Source/{Module}/Public/DataTables/Generated`에 UENUM·USTRUCT와 런타임 헤더를 생성합니다.
+2. `Source/{Module}/DataTables/Generated`에 UENUM·USTRUCT 헤더와 cpp를 함께 생성합니다.
 3. Editor 타깃을 컴파일합니다.
 4. XLSX 데이터를 메모리에서 UDataTable로 변환합니다.
 5. `/Game/PJDevData/DataTables`에 UDataTable 에셋을 생성하거나 갱신합니다.

@@ -296,6 +296,28 @@ namespace CSVParserTool
             FormClosed += Form1_FormClosed;
         }
 
+
+        private void InitializeCleanupButton()
+        {
+            tableBottom.ColumnCount = 5;
+            tableBottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableBottom.SetColumn(Btn_OpenOutputFolder, 2);
+            tableBottom.SetColumn(Btn_OpenCsvFolder, 3);
+            tableBottom.SetColumn(Btn_OpenXlsxFolder, 4);
+
+            Btn_CleanupAll.Name = "Btn_CleanupAll";
+            Btn_CleanupAll.Text = "모두 정리";
+            Btn_CleanupAll.AccessibleName = "현재 엔진에서 Data Tool이 생성한 모든 산출물 정리";
+            Btn_CleanupAll.Anchor = AnchorStyles.None;
+            Btn_CleanupAll.AutoSize = true;
+            Btn_CleanupAll.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            Btn_CleanupAll.Margin = new Padding(8, 0, 0, 0);
+            Btn_CleanupAll.Padding = new Padding(10, 4, 10, 4);
+            Btn_CleanupAll.TabIndex = 1;
+            Btn_CleanupAll.UseCompatibleTextRendering = true;
+            Btn_CleanupAll.Click += Btn_CleanupAll_Click;
+            tableBottom.Controls.Add(Btn_CleanupAll, 1, 0);
+        }
         private bool versionDialogOpen;
         private bool versionDialogShownThisSession;
 
@@ -599,6 +621,9 @@ namespace CSVParserTool
             UITheme.StyleSecondaryButton(Btn_SelectProjectRoot);
             UITheme.StyleSecondaryButton(Btn_SelectExcelFolder);
             UITheme.StyleSecondaryButton(Btn_OpenOutputFolder);
+            UITheme.StyleSecondaryButton(Btn_CleanupAll);
+            Btn_CleanupAll.ForeColor = UITheme.LogError;
+            Btn_CleanupAll.FlatAppearance.BorderColor = UITheme.LogError;
             UITheme.StyleSecondaryButton(Btn_OpenCsvFolder);
             UITheme.StyleSecondaryButton(Btn_OpenXlsxFolder);
             UITheme.StyleSecondaryButton(Btn_NewCsv);
